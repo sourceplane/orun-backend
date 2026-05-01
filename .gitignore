@@ -3,3 +3,6 @@ dist/
 .turbo/
 .wrangler/
 *.log
+
+# orun per-job staged workspaces
+.orun/runs/

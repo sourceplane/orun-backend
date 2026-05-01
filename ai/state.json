@@ -1,14 +1,15 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 1,
-  "completed": [],
+  "current_task": 2,
+  "completed": [1],
   "repo_health": "green",
-  "next_focus": "monorepo-scaffolding",
+  "next_focus": "task-0002-types-package",
   "last_verified": "2026-05-01",
   "notes": [
-    "Repository currently contains specs and schedule only; no apps, packages, migrations, workflow, or workspace config exist yet.",
-    "No open GitHub PRs were found for sourceplane/orun-backend at orchestration time.",
-    "Merged PRs #1-#3 are spec/orchestrator updates only.",
+    "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
+    "Scaffold includes pnpm+Turborepo workspace, Cloudflare Worker, 4 shared packages, tectonic/orun wiring, CI workflow.",
+    "All turbo tasks pass locally and in CI. Local kiox -- orun plan generates 15 jobs cleanly.",
+    "Follow-up for Task 0002: fix workflow.yml Execute command to --execute --gha; commit kiox.lock; add .workspace/ and .orun/ to .gitignore; wire ESLint.",
     "README spec table appears stale; trust files under spec/ and SCHEDULE.md over README numbering."
   ]
 }
