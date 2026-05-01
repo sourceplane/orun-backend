@@ -48,19 +48,21 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 **Delegate to**: 1 agent  
 **Input spec**: `spec/01-monorepo-structure.md`  
 **Deliverables**:
-- Directory structure: `packages/types`, `packages/worker`, `packages/coordinator`, `packages/storage`, `packages/client`
-- Root `package.json` with workspaces
+- Directory structure: `apps/worker`, `packages/types`, `packages/coordinator`, `packages/storage`, `packages/client`
+- `pnpm-workspace.yaml` declaring `apps/*` and `packages/*`
+- `turbo.json` with `build`, `typecheck`, `deploy` tasks
 - `tsconfig.base.json`
-- `wrangler.jsonc` with correct binding names
-- `package.json` for each package
+- `apps/worker/wrangler.jsonc` with correct binding names
+- `package.json` for each package (scope `@orun/<name>`)
 - Vitest config for each package
 - Empty `migrations/` directory with `README`
 - `.github/workflows/workflow.yml` stub (see `spec/10-devops.md`)
-- `kiox.yaml`, `intent.yaml`, `component.yaml` at repo root (see `spec/10-devops.md`)
+- Root `intent.yaml` (stack-tectonic OCI source, discovery roots, environments) and `kiox.yaml` (orun runtime pin) — see `spec/01-monorepo-structure.md`
+- `component.yaml` per deliverable unit: `apps/worker/component.yaml` (`cloudflare-worker-turbo`) and one per `packages/*` (`turbo-package`) — see `spec/01-monorepo-structure.md`
 
 **Notes for agent**: Do not implement any logic. Create the structure, package configs, tsconfig files, and placeholder `index.ts` exports. The goal is a repo that compiles cleanly.
 
-**Validation**: `npm install && npm run typecheck` completes without error.
+**Validation**: `pnpm install && pnpm exec turbo run typecheck` completes without error.
 
 ---
 
@@ -115,10 +117,10 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 **Input spec**: `spec/05-auth.md`, `spec/02-types-package.md`  
 **Depends on**: Task 02  
 **Deliverables**:
-- `packages/worker/src/auth/oidc.ts` — OIDC verification
-- `packages/worker/src/auth/session.ts` — session JWT issue/verify
-- `packages/worker/src/auth/github-oauth.ts` — OAuth flow helpers
-- `packages/worker/src/auth/index.ts` — `authenticate()` main function
+- `apps/worker/src/auth/oidc.ts` — OIDC verification
+- `apps/worker/src/auth/session.ts` — session JWT issue/verify
+- `apps/worker/src/auth/github-oauth.ts` — OAuth flow helpers
+- `apps/worker/src/auth/index.ts` — `authenticate()` main function
 - Tests for each module
 
 **Notes for agent**: Use the Web Crypto API (`crypto.subtle`) for JWT verification — no external libraries. The GitHub JWKS endpoint must be fetched with in-memory caching.
@@ -133,7 +135,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 **Input spec**: `spec/03-worker-api.md`, all prior specs  
 **Depends on**: Tasks 03, 04, 05  
 **Deliverables**:
-- `packages/worker/src/index.ts` — main Worker entrypoint with routing
+- `apps/worker/src/index.ts` — main Worker entrypoint with routing
 - Handler files for each endpoint group
 - Rate limiting module (`spec/09-rate-limiting.md`)
 - Scheduled Worker handler
@@ -203,9 +205,9 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 
 ### Phase 1 complete when:
 
-- [ ] `npm run typecheck` passes across all packages
-- [ ] `npm test` passes across all packages
-- [ ] `wrangler dev` starts
+- [ ] `pnpm exec turbo run typecheck` passes across all packages
+- [ ] `pnpm exec turbo run test` passes across all packages
+- [ ] `wrangler dev` starts from `apps/worker`
 - [ ] Manual curl test flow works (see Task 06 notes)
 - [ ] Two concurrent runners can claim different jobs in the same run without conflict
 - [ ] Heartbeat timeout causes job takeover correctly
