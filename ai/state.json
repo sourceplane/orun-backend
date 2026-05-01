@@ -10,6 +10,7 @@
     "Scaffold includes pnpm+Turborepo workspace, Cloudflare Worker, 4 shared packages, tectonic/orun wiring, CI workflow.",
     "All turbo tasks pass locally and in CI. Local kiox -- orun plan generates 15 jobs cleanly.",
     "Follow-up for Task 0002: fix workflow.yml Execute command to --execute --gha; commit kiox.lock; add .workspace/ and .orun/ to .gitignore; wire ESLint.",
+    "Task 0002 implementer prompt generated at ai/tasks/task-0002.md.",
     "README spec table appears stale; trust files under spec/ and SCHEDULE.md over README numbering."
   ]
 }

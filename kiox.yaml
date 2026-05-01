@@ -4,4 +4,4 @@ metadata:
   name: orun-backend
 providers:
   orun:
-    source: ghcr.io/sourceplane/orun:v0.9.6
+    source: ghcr.io/sourceplane/orun:v1.7.0

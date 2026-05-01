@@ -4,5 +4,6 @@ dist/
 .wrangler/
 *.log
 
-# orun per-job staged workspaces
-.orun/runs/
+# orun/kiox generated caches
+.orun/
+.workspace/

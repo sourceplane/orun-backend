@@ -1,0 +1,11 @@
+apiVersion: kiox.io/v1
+kind: WorkspaceLock
+metadata:
+    name: orun-backend
+providers:
+    - alias: orun
+      provider: sourceplane/orun
+      source: ghcr.io/sourceplane/orun:v1.7.0
+      version: v1.7.0
+      resolved: ghcr.io/sourceplane/orun@sha256:7edfd13b8402d69f97d55a26440e5d760538e3e0441ab00e80e5718bbc95068a
+      store: 2eeea6c6e65e97b34017b534660de7287a04795b156eda819868be7682c59e36
