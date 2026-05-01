@@ -22,7 +22,7 @@ orun-backend/
 ├── spec/                       # This folder — implementation specs
 ├── .github/
 │   └── workflows/
-│       └── workflow.yml        # orun-based CI/CD (see spec/10-devops.md)
+│       └── workflow.yml        # orun-based CI/CD (see spec/02-devops.md)
 ├── intent.yaml                 # Composition sources, discovery roots, and environments
 ├── kiox.yaml                   # Pins the orun runtime version
 ├── pnpm-workspace.yaml         # pnpm workspace declaration

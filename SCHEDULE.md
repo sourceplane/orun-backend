@@ -41,7 +41,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 **Goal**: A working backend that can be tested with curl. No CLI changes yet.
 
-> **DevOps model**: This project uses orun + stack-tectonic for CI/CD. See `spec/10-devops.md` for `kiox.yaml`, `intent.yaml`, `component.yaml`, and the GitHub Actions workflow. Task 01 includes scaffolding these files alongside the monorepo structure.
+> **DevOps model**: This project uses orun + stack-tectonic for CI/CD. See `spec/02-devops.md` for `kiox.yaml`, `intent.yaml`, `component.yaml`, and the GitHub Actions workflow. Task 01 includes scaffolding these files alongside the monorepo structure.
 
 ### Task 01 — Monorepo Scaffolding
 
@@ -56,7 +56,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 - `package.json` for each package (scope `@orun/<name>`)
 - Vitest config for each package
 - Empty `migrations/` directory with `README`
-- `.github/workflows/workflow.yml` stub (see `spec/10-devops.md`)
+- `.github/workflows/workflow.yml` stub (see `spec/02-devops.md`)
 - Root `intent.yaml` (stack-tectonic OCI source, discovery roots, environments) and `kiox.yaml` (orun runtime pin) — see `spec/01-monorepo-structure.md`
 - `component.yaml` per deliverable unit: `apps/worker/component.yaml` (`cloudflare-worker-turbo`) and one per `packages/*` (`turbo-package`) — see `spec/01-monorepo-structure.md`
 
@@ -69,7 +69,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 02 — `@orun/types` Package
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/02-types-package.md`  
+**Input spec**: `spec/03-types-package.md`  
 **Depends on**: Task 01  
 **Deliverables**:
 - `packages/types/src/index.ts` — all type exports
@@ -83,7 +83,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 03 — `RunCoordinator` Durable Object
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/04-coordinator-do.md`, `spec/02-types-package.md`  
+**Input spec**: `spec/05-coordinator-do.md`, `spec/03-types-package.md`  
 **Depends on**: Task 02  
 **Deliverables**:
 - `packages/coordinator/src/coordinator.ts` — `RunCoordinator` class
@@ -98,7 +98,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 04 — `@orun/storage` Package
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/06-storage.md`, `spec/02-types-package.md`  
+**Input spec**: `spec/07-storage.md`, `spec/03-types-package.md`  
 **Depends on**: Task 02  
 **Deliverables**:
 - `packages/storage/src/r2.ts` — `R2Storage` class
@@ -114,7 +114,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 05 — Auth Module
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/05-auth.md`, `spec/02-types-package.md`  
+**Input spec**: `spec/06-auth.md`, `spec/03-types-package.md`  
 **Depends on**: Task 02  
 **Deliverables**:
 - `apps/worker/src/auth/oidc.ts` — OIDC verification
@@ -132,12 +132,12 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 06 — Worker API
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/03-worker-api.md`, all prior specs  
+**Input spec**: `spec/04-worker-api.md`, all prior specs  
 **Depends on**: Tasks 03, 04, 05  
 **Deliverables**:
 - `apps/worker/src/index.ts` — main Worker entrypoint with routing
 - Handler files for each endpoint group
-- Rate limiting module (`spec/09-rate-limiting.md`)
+- Rate limiting module (`spec/10-rate-limiting.md`)
 - Scheduled Worker handler
 - Integration tests with Miniflare
 
@@ -155,7 +155,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 07 — Account & Repo Linking
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/07-account-repo-linking.md`  
+**Input spec**: `spec/08-account-repo-linking.md`  
 **Depends on**: Task 06  
 **Deliverables**:
 - `POST /v1/accounts`, `GET /v1/accounts/me`
@@ -168,7 +168,7 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 ### Task 08 — CLI Remote Backend Integration (Go)
 
 **Delegate to**: 1 agent  
-**Input spec**: `spec/08-cli-integration.md`  
+**Input spec**: `spec/09-cli-integration.md`  
 **Depends on**: Task 06 (backend must be deployed or mockable)  
 **Deliverables**:
 - `internal/backend/remote/client.go` — HTTP client implementing `BackendClient` interface
