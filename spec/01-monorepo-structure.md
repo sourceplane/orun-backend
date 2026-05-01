@@ -10,33 +10,42 @@ This spec defines the repository layout, package boundaries, tooling, and shared
 
 ```
 orun-backend/
+├── apps/
+│   └── worker/                 # Cloudflare Worker: API gateway + auth + routing + DO binding
 ├── packages/
 │   ├── types/                  # Shared TypeScript interfaces & enums
-│   ├── worker/                 # Cloudflare Worker: API gateway + auth + routing
 │   ├── coordinator/            # Durable Object: RunCoordinator class
 │   ├── storage/                # R2 + D1 access utilities (shared helpers)
 │   └── client/                 # Auto-generated or hand-written HTTP client SDK
 ├── migrations/
 │   └── *.sql                   # D1 migrations (numbered, immutable)
-├── scripts/
-│   ├── deploy.sh               # Wrangler deploy for prod
-│   └── dev.sh                  # Local dev with wrangler dev
 ├── spec/                       # This folder — implementation specs
 ├── .github/
 │   └── workflows/
 │       └── workflow.yml        # orun-based CI/CD (see spec/10-devops.md)
-├── component.yaml              # orun component manifest (cloudflare-worker)
-├── intent.yaml                 # orun intent: composition sources + environments
+├── intent.yaml                 # Composition sources, discovery roots, and environments
 ├── kiox.yaml                   # Pins the orun runtime version
-├── wrangler.jsonc              # Worker + DO + R2 + D1 binding config
-├── package.json                # Root workspace config
+├── pnpm-workspace.yaml         # pnpm workspace declaration
+├── turbo.json                  # Turborepo task pipeline
 ├── tsconfig.base.json          # Shared TypeScript config
 └── README.md
 ```
 
+Each deployable unit (anything with a `wrangler.jsonc`) and each shared package that participates in tectonic stack delivery **must** have a `component.yaml` at its root.
+
 ---
 
 ## Package Descriptions
+
+### `apps/worker`
+
+**Purpose**: The Cloudflare Worker entrypoint. Handles HTTP routing, authentication, rate limiting, and delegates to DO/R2/D1. Thin API gateway — no business logic. Binds and exports the `RunCoordinator` Durable Object.
+
+**Depends on**: `@orun/types`, `@orun/coordinator` (DO class binding), `@orun/storage`
+
+**Exports**: A single default `fetch` handler and `scheduled` handler for Cloudflare Workers.
+
+**Tectonic component type**: `cloudflare-worker-turbo`
 
 ### `packages/types`
 
@@ -55,13 +64,7 @@ orun-backend/
 - No circular imports from other packages
 - All other packages import types from here
 
-### `packages/worker`
-
-**Purpose**: The Cloudflare Worker entrypoint. Handles HTTP routing, authentication, rate limiting, and delegates to DO/R2/D1. Thin API gateway — no business logic.
-
-**Depends on**: `@orun/types`, `@orun/coordinator` (DO class binding), `@orun/storage`
-
-**Exports**: A single default `fetch` handler and `scheduled` handler for Cloudflare Workers.
+**Tectonic component type**: `turbo-package`
 
 ### `packages/coordinator`
 
@@ -70,9 +73,11 @@ orun-backend/
 **Depends on**: `@orun/types`
 
 **Rules**:
-- Must be exported as a named class (`RunCoordinator`) for `wrangler.jsonc` binding` binding
+- Must be exported as a named class (`RunCoordinator`) for `wrangler.jsonc` binding
 - Contains no HTTP routing logic — just DO methods exposed via `fetch`
 - All state mutations are synchronous within the DO's single-threaded context
+
+**Tectonic component type**: `turbo-package`
 
 ### `packages/storage`
 
@@ -85,6 +90,8 @@ orun-backend/
 - `D1Index`: methods for writing/querying the dashboard index
 - Path utilities: `runLogPath(namespaceId, runId, jobId)`, etc.
 
+**Tectonic component type**: `turbo-package`
+
 ### `packages/client`
 
 **Purpose**: TypeScript HTTP client for the orun-backend API. Used by the CLI (Go) or browser apps. Documents the exact request/response contract.
@@ -92,6 +99,137 @@ orun-backend/
 **Note**: This package defines the client-side contract. The Go CLI may implement its own HTTP client using this as documentation, or call this via a small Node.js shim. Coding agents should implement this as a clean TypeScript client.
 
 **Depends on**: `@orun/types`
+
+**Tectonic component type**: `turbo-package`
+
+---
+
+## Tectonic Stack Integration
+
+orun-backend uses the [tectonic stack](https://github.com/sourceplane/stack-tectonic) for all CI/CD delivery. The tectonic stack is consumed as an OCI catalog — it is never vendored locally.
+
+### `intent.yaml`
+
+The root `intent.yaml` declares composition sources (tectonic stack), discovery roots, and environment definitions:
+
+```yaml
+apiVersion: sourceplane.io/v1
+kind: Intent
+
+metadata:
+  name: orun-backend
+  description: Cloud control plane for the orun CLI
+
+compositions:
+  sources:
+    - name: stack-tectonic
+      kind: oci
+      ref: oci://ghcr.io/sourceplane/stack-tectonic:0.11.0
+
+discovery:
+  roots:
+    - apps/
+    - packages/
+
+environments:
+  dev:
+    defaults:
+      lane: dry-run
+      namespacePrefix: dev-
+    policies:
+      requireApproval: "false"
+
+  staging:
+    defaults:
+      lane: verify
+      namespacePrefix: stg-
+    policies:
+      requireApproval: "true"
+
+  production:
+    defaults:
+      lane: release
+      namespacePrefix: prod-
+    policies:
+      requireApproval: "true"
+```
+
+Bump `ref` in lock-step with `kiox.yaml` when upgrading.
+
+### `kiox.yaml`
+
+Pins the orun runtime version:
+
+```yaml
+apiVersion: kiox.io/v1
+kind: Workspace
+metadata:
+  name: orun-backend
+providers:
+  orun:
+    source: ghcr.io/sourceplane/orun:v0.9.6
+```
+
+### `component.yaml` per deliverable unit
+
+Every package that participates in tectonic delivery declares a `component.yaml`. The `spec.type` field must match a composition exported by the tectonic stack.
+
+**`apps/worker/component.yaml`** — Cloudflare Worker delivery:
+
+```yaml
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: orun-api-worker
+
+spec:
+  type: cloudflare-worker-turbo
+  domain: orun-backend
+  subscribe:
+    environments:
+      - dev
+      - staging
+      - production
+  inputs:
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+    productionBranch: main
+  labels:
+    team: platform
+    layer: runtime
+    surface: api
+    runtime: cloudflare
+```
+
+**`packages/types/component.yaml`** — shared type package:
+
+```yaml
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: orun-types
+
+spec:
+  type: turbo-package
+  domain: orun-backend
+  subscribe:
+    environments:
+      - dev
+      - staging
+      - production
+  inputs:
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+  labels:
+    team: platform
+    layer: shared
+    surface: types
+    runtime: node
+```
+
+All other `packages/*` follow the same pattern with `type: turbo-package`.
 
 ---
 
@@ -105,8 +243,43 @@ orun-backend/
 
 ### Package Manager
 
-- npm workspaces (no additional tools like Turborepo required, but compatible)
+- **pnpm workspaces** — declared in `pnpm-workspace.yaml`:
+
+  ```yaml
+  packages:
+    - apps/*
+    - packages/*
+  ```
+
 - Each package has its own `package.json` with `name: "@orun/<name>"`
+- Lock file: `pnpm-lock.yaml` (committed)
+
+### Build Orchestration
+
+- **Turborepo** — task pipeline defined in `turbo.json`:
+
+  ```json
+  {
+    "$schema": "https://turborepo.com/schema.json",
+    "tasks": {
+      "build": {
+        "dependsOn": ["^build"],
+        "outputs": ["dist/**", ".wrangler/**"]
+      },
+      "typecheck": {
+        "dependsOn": ["^typecheck"],
+        "outputs": []
+      },
+      "deploy": {
+        "dependsOn": ["build"],
+        "cache": false,
+        "outputs": []
+      }
+    }
+  }
+  ```
+
+- Use `pnpm exec turbo run build --filter=./` per-package, or `turbo run build` from the workspace root.
 
 ### Testing
 
@@ -121,19 +294,20 @@ orun-backend/
 
 ### Build
 
-- Each package builds independently with `tsc` or `wrangler` (for Worker)
-- `wrangler build` produces the deployable Worker bundle
+- `apps/worker` builds via `wrangler build` (produces deployable Worker bundle)
+- All other packages build with `tsc`
+- Turbo orchestrates dependency order
 
 ---
 
-## Wrangler Configuration (`wrangler.jsonc`)
+## Wrangler Configuration (`apps/worker/wrangler.jsonc`)
 
-The root `wrangler.jsonc` configures all bindings. Coding agents must not hardcode binding names — use the following names exactly:
+The Worker's `wrangler.jsonc` lives inside `apps/worker/`. Coding agents must not hardcode binding names — use the following names exactly:
 
 ```jsonc
 {
   "name": "orun-api",
-  "main": "packages/worker/src/index.ts",
+  "main": "src/index.ts",
   "compatibility_date": "2024-01-01",
   "durable_objects": {
     "bindings": [
@@ -199,10 +373,10 @@ import { RunCoordinator } from "@orun/coordinator";
 
 ## Deployment Environments
 
-| Environment | Purpose | Worker Name |
-|------------|---------|-------------|
-| `dev` | Local development (wrangler dev) | n/a |
-| `staging` | Pre-production testing | `orun-api-staging` |
-| `production` | Live system | `orun-api` |
+Environments are defined in `intent.yaml` and mapped to wrangler `[env.*]` stanzas:
 
-Environments are selected via `wrangler.jsonc` `[env.*]` stanzas.
+| Environment | Tectonic Lane | Purpose |
+|------------|--------------|---------|
+| `dev` | `dry-run` | Local development (wrangler dev / dry-run deploy) |
+| `staging` | `verify` | Pre-production testing, requires approval |
+| `production` | `release` | Live system, requires approval, deploys only from `main` |
