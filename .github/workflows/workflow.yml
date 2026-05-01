@@ -1,0 +1,44 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  review-plan:
+    name: Review Plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize orun workspace
+        uses: sourceplane/kiox-action@v2.1.2
+
+      - name: Compile review-scoped plan
+        run: kiox -- orun plan
+
+  build-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize orun workspace
+        uses: sourceplane/kiox-action@v2.1.2
+
+      - name: Compile full plan
+        run: kiox -- orun plan --view dag
+
+      - name: Execute
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: kiox -- orun run --execute --gha
