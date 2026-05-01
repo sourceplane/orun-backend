@@ -1,0 +1,22 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: orun-storage
+
+spec:
+  type: turbo-package
+  domain: orun-backend
+  subscribe:
+    environments:
+      - dev
+      - staging
+      - production
+  inputs:
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+  labels:
+    team: platform
+    layer: shared
+    surface: storage
+    runtime: cloudflare

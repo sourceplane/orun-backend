@@ -1,0 +1,39 @@
+apiVersion: sourceplane.io/v1
+kind: Intent
+
+metadata:
+  name: orun-backend
+  description: Cloud control plane for the orun CLI
+
+compositions:
+  sources:
+    - name: stack-tectonic
+      kind: oci
+      ref: oci://ghcr.io/sourceplane/stack-tectonic:0.11.0
+
+discovery:
+  roots:
+    - apps/
+    - packages/
+
+environments:
+  dev:
+    defaults:
+      lane: dry-run
+      namespacePrefix: dev-
+    policies:
+      requireApproval: "false"
+
+  staging:
+    defaults:
+      lane: verify
+      namespacePrefix: stg-
+    policies:
+      requireApproval: "true"
+
+  production:
+    defaults:
+      lane: release
+      namespacePrefix: prod-
+    policies:
+      requireApproval: "true"
