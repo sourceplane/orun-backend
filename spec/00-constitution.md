@@ -94,6 +94,23 @@ Logs may contain secret values printed by user scripts. The platform:
 - Must never store GitHub tokens, API keys, or pipeline secrets as first-class data.
 - In future: support optional client-side encryption for logs.
 
+### 11. All CI/CD Delivery Uses the Tectonic Stack
+
+Every deployable unit and shared package must be wired to the [tectonic stack](https://github.com/sourceplane/stack-tectonic) composition catalog. No custom GitHub Actions workflows are written for build, typecheck, or deploy steps — these are provided by tectonic compositions.
+
+- **Correct**: `apps/worker/component.yaml` declares `type: cloudflare-worker-turbo`; the tectonic stack composition runs build, typecheck, and deploy.
+- **Incorrect**: A bespoke `.github/workflows/deploy-worker.yml` that re-implements install → build → typecheck → wrangler deploy.
+- **Why**: Tectonic compositions are versioned, tested, and maintained centrally. One-off workflows drift, break, and accumulate security debt. All CI/CD logic changes flow through `intent.yaml` version bumps, not per-repo workflow edits.
+
+**Mandatory files at the monorepo root**:
+- `intent.yaml` — declares `stack-tectonic` as the OCI composition source, lists discovery roots, and defines environments.
+- `kiox.yaml` — pins the orun runtime version.
+
+**Mandatory file per deliverable unit** (every `apps/*` and every `packages/*` that participates in tectonic delivery):
+- `component.yaml` — declares the composition type (`cloudflare-worker-turbo`, `turbo-package`, etc.), subscribed environments, and inputs.
+
+See `spec/01-monorepo-structure.md` for canonical examples of each file.
+
 ---
 
 ## Technology Decisions
@@ -106,7 +123,8 @@ Logs may contain secret values printed by user scripts. The platform:
 | Dashboard index | Cloudflare D1 (SQLite) | Native Workers integration, simple SQL |
 | Runtime cache | Cloudflare KV (optional) | Permission caching, rate limit counters |
 | Language | TypeScript | Workers native, strong types across packages |
-| Monorepo | npm workspaces | Simple, no extra tooling |
+| Monorepo | pnpm + Turborepo | pnpm workspaces for dependency management; Turbo for build/typecheck orchestration with caching |
+| CI/CD delivery | Tectonic stack (`oci://ghcr.io/sourceplane/stack-tectonic`) | Versioned composition catalog; compositions handle all build/deploy logic via `component.yaml` declarations |
 
 ---
 
