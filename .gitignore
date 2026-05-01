@@ -7,3 +7,6 @@ dist/
 # orun/kiox generated caches
 .orun/
 .workspace/
+
+# orun per-job staged workspaces
+.orun/runs/
