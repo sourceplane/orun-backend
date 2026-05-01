@@ -23,7 +23,7 @@ jobs:
         uses: sourceplane/kiox-action@v2.1.2
 
       - name: Compile review-scoped plan
-        run: kiox -- orun plan
+        run: kiox -- orun plan --changed
 
   build-deploy:
     name: Build & Deploy
@@ -36,11 +36,8 @@ jobs:
       - name: Initialize orun workspace
         uses: sourceplane/kiox-action@v2.1.2
 
-      - name: Compile full plan
-        run: kiox -- orun plan --view dag
-
       - name: Execute
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: kiox -- orun run
+        run: kiox -- orun run --changed

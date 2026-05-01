@@ -96,9 +96,13 @@ Must:
 * inspect prompt + PR + report
 * validate acceptance criteria
 * run quality gates
+* run local kiox/orun validation when available
+* inspect GitHub Actions logs, not just status summaries
 * detect overreach / hidden coupling
 * confirm production-grade basics
 * PASS / FAIL
+* if PASS, merge the PR and sync local main
+* if FAIL, leave the PR open with clear blockers
 
 Report:
 
@@ -109,6 +113,16 @@ Checks
 Issues
 Risk Notes
 Recommended Next Move
+
+Verifier Merge Protocol:
+
+* Prefer `/Users/irinelinson/.local/bin/kiox` when `kiox` is not on `PATH`
+* Run `kiox -- orun plan` and `kiox -- orun run` locally when the task touches delivery wiring
+* Check PR CI logs with `gh`, including successful jobs, to confirm expected commands actually ran
+* If verification adds a report or small verification-only fix, commit it to the PR branch, push, and wait for CI again
+* Merge only after local checks and PR CI logs are both acceptable
+* After merge, checkout `main` locally and fast-forward pull from `origin/main`
+* Never merge a PR with unresolved verification blockers
 
 ⸻
 
@@ -197,4 +211,3 @@ The Orchestrator thinks like a staff engineer:
 * keep quality high
 * ship incrementally
 * never plan from assumptions
-
