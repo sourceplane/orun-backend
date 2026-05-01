@@ -1,16 +1,18 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 2,
-  "completed": [1],
+  "current_task": 3,
+  "completed": [1, 2],
   "repo_health": "green",
-  "next_focus": "task-0002-types-package",
+  "next_focus": "task-0003-coordinator",
   "last_verified": "2026-05-01",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
     "Scaffold includes pnpm+Turborepo workspace, Cloudflare Worker, 4 shared packages, tectonic/orun wiring, CI workflow.",
     "All turbo tasks pass locally and in CI. Local kiox -- orun plan generates 15 jobs cleanly.",
-    "Follow-up for Task 0002: fix workflow.yml Execute command to --execute --gha; commit kiox.lock; add .workspace/ and .orun/ to .gitignore; wire ESLint.",
-    "Task 0002 implementer prompt generated at ai/tasks/task-0002.md.",
-    "README spec table appears stale; trust files under spec/ and SCHEDULE.md over README numbering."
+    "Task 0002 (@orun/types) verified PASS and merged as PR #5.",
+    "@orun/types exports all 23 types/interfaces from spec. paths.ts and package exports correct. 16 tests pass. All 5 packages typecheck/build/test clean.",
+    "kiox.yaml pins v1.11.0 but kiox.lock pins v1.10.1 — version mismatch. CI ran successfully (kiox-action resolves from yaml). Follow-up: regenerate kiox.lock to match kiox.yaml:v1.11.0 in Task 0003.",
+    "workflow.yml uses kiox -- orun run --changed (not --gha). GHA mode is auto-detected by orun; CI confirmed 'gha' scope in output. Acceptable.",
+    "Task 0003 prompt should be generated at ai/tasks/task-0003.md."
   ]
 }
