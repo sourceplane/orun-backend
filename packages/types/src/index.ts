@@ -158,5 +158,9 @@ export interface Env {
   DB: D1Database;
   GITHUB_JWKS_URL: string;
   GITHUB_OIDC_AUDIENCE: string;
+  ORUN_SESSION_SECRET?: string;
   ORUN_DEPLOY_TOKEN?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  ORUN_PUBLIC_URL?: string;
 }

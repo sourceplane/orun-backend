@@ -79,7 +79,7 @@ GET /v1/auth/github
      ?client_id=<GITHUB_CLIENT_ID>
      &redirect_uri=<WORKER_URL>/v1/auth/github/callback
      &scope=read:user,read:org
-     &state=<random CSRF token, stored in KV for 10 min>
+     &state=<stateless signed CSRF token: nonce.exp.hmac(nonce.exp, ORUN_SESSION_SECRET)>
 ```
 
 ### Step 2: GitHub Callback
@@ -87,7 +87,7 @@ GET /v1/auth/github
 ```
 GET /v1/auth/github/callback?code=<code>&state=<state>
 
-1. Verify state matches KV value (prevent CSRF)
+1. Verify state HMAC signature and expiry (prevent CSRF, stateless — no KV needed)
 2. Exchange code for access_token:
    POST https://github.com/login/oauth/access_token
      { client_id, client_secret, code, redirect_uri }
@@ -149,7 +149,7 @@ async function verifySessionToken(token: string, secret: string): Promise<Sessio
 ## Main `authenticate()` Function
 
 ```typescript
-async function authenticate(request: Request, env: Env): Promise<RequestContext> {
+async function authenticate(request: Request, env: Env, ctx?: Pick<ExecutionContext, "waitUntil">): Promise<RequestContext> {
   const auth = request.headers.get("Authorization");
   const deployToken = request.headers.get("X-Orun-Deploy-Token");
 
@@ -171,7 +171,12 @@ async function authenticate(request: Request, env: Env): Promise<RequestContext>
     const claims = await verifyOIDCToken(token, env);
     const namespace = extractNamespaceFromOIDC(claims);
     // Lazily update namespace slug in D1
-    ctx.waitUntil(upsertNamespaceSlug(env.DB, namespace));
+    const upsertPromise = upsertNamespaceSlug(env.DB, namespace);
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(upsertPromise);
+    } else {
+      await upsertPromise;
+    }
     return { type: "oidc", namespace, allowedNamespaceIds: [namespace.namespaceId], actor: claims.actor };
   } else {
     const claims = await verifySessionToken(token, env.ORUN_SESSION_SECRET);
