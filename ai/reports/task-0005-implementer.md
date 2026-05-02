@@ -113,6 +113,10 @@ $ kiox -- orun run --changed
 0 components × 3 envs → 0 jobs — ✓ no jobs to run
 ```
 
+## PR
+
+**PR #12**: https://github.com/sourceplane/orun-backend/pull/12
+
 ## Remaining Gaps / Risks for Task 0006
 
 1. **No Worker routing implemented**: `authenticate()` is exported but `apps/worker/src/index.ts` still returns a bare `"orun-api"` response. Task 0006 will wire auth into the fetch handler.
