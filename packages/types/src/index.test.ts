@@ -102,5 +102,10 @@ describe("type exports", () => {
     expectTypeOf<Env>().toHaveProperty("DB");
     expectTypeOf<Env>().toHaveProperty("GITHUB_JWKS_URL");
     expectTypeOf<Env>().toHaveProperty("GITHUB_OIDC_AUDIENCE");
+    expectTypeOf<Env>().toHaveProperty("ORUN_SESSION_SECRET");
+    expectTypeOf<Env>().toHaveProperty("ORUN_DEPLOY_TOKEN");
+    expectTypeOf<Env>().toHaveProperty("GITHUB_CLIENT_ID");
+    expectTypeOf<Env>().toHaveProperty("GITHUB_CLIENT_SECRET");
+    expectTypeOf<Env>().toHaveProperty("ORUN_PUBLIC_URL");
   });
 });

@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 5,
-  "completed": [1, 2, 3, 4],
+  "current_task": 6,
+  "completed": [1, 2, 3, 4, 5],
   "repo_health": "green",
-  "next_focus": "task-0005-auth",
+  "next_focus": "task-0006-worker-api",
   "last_verified": "2026-05-02",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
@@ -24,6 +24,10 @@
     "CI run 25241213120: orun-storage detected, verify-turbo-package passed (build+typecheck) for all 3 envs. 2 components × 3 envs → 6 jobs.",
     "Verifier fixed: deleteExpiredRuns SQL had cross-namespace over-delete bug (independent namespace_id IN + run_id IN subqueries). Fixed to correlated EXISTS subquery. New test added.",
     "Storage risk: D1 tests use fake, not real D1. Fake correctly validates behavior but cannot catch D1-specific SQL dialect issues.",
-    "Task 0005 (auth) is unblocked and can proceed. Task 0006 (Worker API) depends on storage + auth."
+    "Task 0005 (auth module) verified PASS and merged as PR #12.",
+    "Worker auth module at apps/worker/src/auth/: OIDC verification (JWKS cache 15min, RS256, Web Crypto), session JWT (HS256), OAuth helpers (signed CSRF state, pagination, org-admin repos), deploy token, namespace upsert. 55 tests pass.",
+    "CI run 25243269728: orun-api-worker + orun-types detected (2 components × 3 envs → 6 jobs). verify-deploy-cloudflare-worker-turbo ran for orun-api-worker (build+typecheck+wrangler dry-run ×3 envs). No live deploy. Local kiox run: exec id orun-backend-20260502-0b11db, 6/6 jobs succeeded.",
+    "Auth CI limitation: verify-deploy-cloudflare-worker-turbo does not run unit tests. 55 auth tests pass locally only. Consistent with prior tasks.",
+    "Auth risk notes: fetchAllPages silently breaks on non-OK GitHub API (under-permission, not over-permission); unused OrunError import in namespace.ts (cosmetic); session iat not validated as number (no security impact). All non-blocking."
   ]
 }
