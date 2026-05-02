@@ -179,6 +179,8 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 - `cmd/orun/command_status.go` and `cmd/orun/command_logs.go` remote-state support.
 - `intent.yaml` schema/model support for `execution.state.mode: remote` and optional `execution.state.backendUrl`.
 - Stable run/job runtime IDs that include the plan ID and expose `ORUN_PLAN_ID`, `ORUN_EXEC_ID`, `ORUN_JOB_ID`, and `ORUN_JOB_RUN_ID` to steps.
+- Remote-state conformance examples in `sourceplane/orun`: `examples/remote-state-matrix/`, `examples/github-actions/remote-state-matrix.yml`, optional gated `.github/workflows/remote-state-conformance.yml`, and website docs.
+- GitHub Actions matrix proof covering one compiled plan, one-job-per-runner fan-out, duplicate claim handling, dependency waits, environment fan-out, and final `orun status`/`orun logs` verification.
 - Backend changes in `sourceplane/orun-backend` if needed: deterministic `CreateRunRequest.runId`, idempotent create/join, runner-owned updates, and run/job read endpoints.
 - Unit and integration tests in both repos as applicable.
 
@@ -223,6 +225,8 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 - [ ] `orun run <plan-id> --remote-state --job <job-id>` succeeds in a GitHub Actions test workflow
 - [ ] Multiple GitHub Actions jobs in a matrix run coordinate correctly against the same plan/run ID
 - [ ] `orun run <plan-id> --env dev --remote-state` and `orun run <plan-id> --env stage --remote-state` can run separately and wait for dependencies
+- [ ] A copyable GitHub Actions matrix example exists and proves fan-out/fan-in remote-state behavior after CLI integration
+- [ ] The conformance workflow includes at least one duplicate job target to prove idempotent claim or already-complete handling
 - [ ] `orun status --remote-state --exec-id <run-id>` shows correct run state
 - [ ] `orun logs --remote-state --exec-id <run-id> --job <job-id>` shows logs
 

@@ -226,6 +226,202 @@ Use exponential backoff with jitter for dependency polling, starting at 2 second
 
 ---
 
+## GitHub Actions Matrix Conformance Harness
+
+The CLI integration task must include copyable GitHub Actions examples that exercise remote state the way real platform teams will use it: one compiled plan, many independent runners, shared backend state, dependency waits, and post-run inspection.
+
+Create these artifacts in `sourceplane/orun`:
+
+- `examples/remote-state-matrix/` — a small intent fixture with at least three components and two environments.
+- `examples/github-actions/remote-state-matrix.yml` — a copyable workflow example for users.
+- `.github/workflows/remote-state-conformance.yml` — an optional live conformance workflow gated by `workflow_dispatch` and/or a repository variable such as `ORUN_REMOTE_STATE_E2E=true`.
+- Website docs that explain how to adapt the workflow for self-hosted runners, larger matrices, and protected environments.
+
+The fixture should be deterministic and safe to run repeatedly. It must not require cloud deploy credentials. Prefer tiny shell steps that write clear markers, sleep briefly to expose waiting behavior, and fail only when the test is intentionally exercising blocked dependencies.
+
+Minimum DAG shape:
+
+```text
+foundation@dev.smoke
+foundation@stage.smoke
+api@dev.smoke       depends on foundation@dev.smoke
+api@stage.smoke     depends on foundation@stage.smoke
+web@dev.smoke       depends on api@dev.smoke
+web@stage.smoke     depends on api@stage.smoke
+```
+
+The workflow must prove all of these behaviors:
+
+- A single plan is compiled once, saved, and addressed by checksum prefix.
+- The compiled `.orun/plans/` content is passed to matrix jobs as an artifact so clean runners can resolve the same plan ID.
+- Matrix children reuse the same `ORUN_EXEC_ID` / remote run ID.
+- Each matrix child runs one selected job via `--job`.
+- At least one duplicate matrix entry targets a job that another runner also targets; exactly one runner should claim it, and the other should exit cleanly when the job is already running or complete.
+- Jobs whose dependencies are not complete wait by polling remote state instead of failing because local state is empty.
+- An environment fan-out example runs `orun run <planID> --env dev --remote-state` and `orun run <planID> --env stage --remote-state` as separate jobs against the same plan shape.
+- A final verification job calls `orun status --remote-state` and `orun logs --remote-state` and asserts that all expected jobs reached success.
+
+Reference workflow shape:
+
+```yaml
+name: orun remote-state matrix conformance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "cmd/orun/**"
+      - "internal/**"
+      - "examples/remote-state-matrix/**"
+      - ".github/workflows/remote-state-conformance.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' || vars.ORUN_REMOTE_STATE_E2E == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      plan_id: ${{ steps.plan.outputs.plan_id }}
+      run_id: ${{ steps.plan.outputs.run_id }}
+      jobs: ${{ steps.matrix.outputs.jobs }}
+      first_job: ${{ steps.matrix.outputs.first_job }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install orun
+        run: go install ./cmd/orun
+
+      - name: Compile plan
+        id: plan
+        working-directory: examples/remote-state-matrix
+        run: |
+          orun plan --name remote-state-e2e --all
+          plan_id="$(orun get plans -o json | jq -r '.[] | select(.Name == "remote-state-e2e") | .Checksum')"
+          run_id="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${plan_id}"
+          echo "plan_id=${plan_id}" >> "${GITHUB_OUTPUT}"
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build job matrix
+        id: matrix
+        working-directory: examples/remote-state-matrix
+        run: |
+          jobs="$(orun get jobs --plan '${{ steps.plan.outputs.plan_id }}' --all -o json \
+            | jq -c '[.[] | {job: .id, env: .environment, component: .component}]')"
+          first_job="$(printf '%s' "${jobs}" | jq -r '.[0].job')"
+          # Append a duplicate to prove idempotent claim/already-complete behavior.
+          jobs="$(printf '%s' "${jobs}" | jq -c --arg job "${first_job}" '. + [{job: $job, env: "duplicate", component: "duplicate"}]')"
+          echo "jobs=${jobs}" >> "${GITHUB_OUTPUT}"
+          echo "first_job=${first_job}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload compiled plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: orun-remote-state-plan
+          path: examples/remote-state-matrix/.orun/plans/
+          if-no-files-found: error
+
+  run-one-job-per-runner:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.jobs) }}
+    env:
+      ORUN_BACKEND_URL: ${{ vars.ORUN_BACKEND_URL }}
+      ORUN_REMOTE_STATE: "true"
+      ORUN_EXEC_ID: ${{ needs.plan.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install orun
+        run: go install ./cmd/orun
+
+      - name: Download compiled plan
+        uses: actions/download-artifact@v4
+        with:
+          name: orun-remote-state-plan
+          path: examples/remote-state-matrix/.orun/plans/
+
+      - name: Run selected job through remote state
+        working-directory: examples/remote-state-matrix
+        run: |
+          orun run '${{ needs.plan.outputs.plan_id }}' \
+            --job '${{ matrix.job }}' \
+            --remote-state \
+            --backend-url "${ORUN_BACKEND_URL}" \
+            --gha \
+            --verbose
+
+  run-env-fanout:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env_name: [dev, stage]
+    env:
+      ORUN_BACKEND_URL: ${{ vars.ORUN_BACKEND_URL }}
+      ORUN_REMOTE_STATE: "true"
+      ORUN_EXEC_ID: env-${{ needs.plan.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install orun
+        run: go install ./cmd/orun
+
+      - name: Download compiled plan
+        uses: actions/download-artifact@v4
+        with:
+          name: orun-remote-state-plan
+          path: examples/remote-state-matrix/.orun/plans/
+
+      - name: Run environment slice through remote state
+        working-directory: examples/remote-state-matrix
+        run: |
+          orun run '${{ needs.plan.outputs.plan_id }}' \
+            --env '${{ matrix.env_name }}' \
+            --remote-state \
+            --backend-url "${ORUN_BACKEND_URL}" \
+            --gha
+
+  verify:
+    needs: [plan, run-one-job-per-runner, run-env-fanout]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      ORUN_BACKEND_URL: ${{ vars.ORUN_BACKEND_URL }}
+      ORUN_REMOTE_STATE: "true"
+      ORUN_EXEC_ID: ${{ needs.plan.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install orun
+        run: go install ./cmd/orun
+      - name: Download compiled plan
+        uses: actions/download-artifact@v4
+        with:
+          name: orun-remote-state-plan
+          path: examples/remote-state-matrix/.orun/plans/
+      - name: Verify remote status and logs
+        working-directory: examples/remote-state-matrix
+        run: |
+          orun status --remote-state --backend-url "${ORUN_BACKEND_URL}" --exec-id "${ORUN_EXEC_ID}" --json
+          orun logs --remote-state --backend-url "${ORUN_BACKEND_URL}" --exec-id "${ORUN_EXEC_ID}" --job '${{ needs.plan.outputs.first_job }}'
+```
+
+The exact YAML may evolve with the final CLI flags, but the behavior above is required. Treat this workflow as a conformance example: it should be simple enough for users to copy, strict enough to catch distributed-state regressions, and explicit about OIDC permissions and backend URL configuration.
+
+---
+
 ## Backend HTTP Requirements
 
 The backend must support these client calls:
@@ -300,6 +496,7 @@ For `sourceplane/orun`:
 - `--job` with `--remote-state` waits for dependencies instead of failing only because local state is missing them.
 - Job runtime IDs include the plan ID and are exposed through environment variables.
 - `intent.yaml` can enable remote state.
+- GitHub Actions example workflows and docs cover job matrix fan-out, environment fan-out, duplicate claim behavior, dependency waits, and final `status`/`logs` verification.
 - Local filesystem state is implemented through the same `StateBackend` interface and preserves status/log/resume compatibility.
 - Unit tests cover file state, remote client request/response handling, dependency wait behavior, and ID derivation.
 - `go test ./...` passes.
