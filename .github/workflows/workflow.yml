@@ -21,6 +21,8 @@ jobs:
 
       - name: Initialize orun workspace
         uses: sourceplane/kiox-action@v2.1.2
+        with:
+          version: v0.4.3
 
       - name: Compile review-scoped plan
         run: kiox -- orun plan --changed
@@ -35,6 +37,8 @@ jobs:
 
       - name: Initialize orun workspace
         uses: sourceplane/kiox-action@v2.1.2
+        with:
+          version: v0.4.3
 
       - name: Execute
         env:

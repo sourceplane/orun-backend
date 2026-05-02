@@ -180,6 +180,8 @@ jobs:
 
       - name: Initialize orun workspace
         uses: sourceplane/kiox-action@v2.1.2
+        with:
+          version: v0.4.3
 
       - name: Compile review-scoped plan
         run: kiox -- orun plan --changed
@@ -194,6 +196,8 @@ jobs:
 
       - name: Initialize orun workspace
         uses: sourceplane/kiox-action@v2.1.2
+        with:
+          version: v0.4.3
 
       - name: Execute
         env:
@@ -204,7 +208,7 @@ jobs:
 
 The `review-plan` job runs only on pull requests and compiles the changed-component plan without executing it. The `build-deploy` job runs on both PRs and pushes to `main`; `orun run` executes by default, so there is no `--execute` flag. GitHub Actions mode is auto-detected by `orun` in CI, so the workflow does not need an explicit `--gha` flag.
 
-Both checkout steps use `fetch-depth: 0` so `orun --changed` has enough git history to resolve the base/head diff. CI logs must be inspected during verification to confirm `kiox -- orun plan --changed` and `kiox -- orun run --changed` actually ran.
+Both checkout steps use `fetch-depth: 0` so `orun --changed` has enough git history to resolve the base/head diff. The workflow pins `kiox-action`'s `version` input to `v0.4.3` so CI does not depend on resolving the latest kiox release at runtime. CI logs must be inspected during verification to confirm `kiox -- orun plan --changed` and `kiox -- orun run --changed` actually ran.
 
 ---
 
