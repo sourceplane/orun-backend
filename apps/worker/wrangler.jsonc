@@ -8,6 +8,11 @@
         "name": "COORDINATOR",
         "class_name": "RunCoordinator",
         "script_name": "orun-api"
+      },
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimitCounter",
+        "script_name": "orun-api"
       }
     ]
   },
@@ -27,5 +32,8 @@
   "vars": {
     "GITHUB_JWKS_URL": "https://token.actions.githubusercontent.com/.well-known/jwks",
     "GITHUB_OIDC_AUDIENCE": "orun"
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
   }
 }

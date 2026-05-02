@@ -69,6 +69,7 @@ describe("type exports", () => {
 
   it("API payloads", () => {
     expectTypeOf<CreateRunRequest>().toHaveProperty("plan");
+    expectTypeOf<CreateRunRequest>().toHaveProperty("runId");
     expectTypeOf<CreateRunResponse>().toHaveProperty("runId");
     expectTypeOf<ClaimJobRequest>().toHaveProperty("runnerId");
     expectTypeOf<UpdateJobRequest>().toHaveProperty("status");
@@ -98,6 +99,7 @@ describe("type exports", () => {
 
   it("Env interface", () => {
     expectTypeOf<Env>().toHaveProperty("COORDINATOR");
+    expectTypeOf<Env>().toHaveProperty("RATE_LIMITER");
     expectTypeOf<Env>().toHaveProperty("STORAGE");
     expectTypeOf<Env>().toHaveProperty("DB");
     expectTypeOf<Env>().toHaveProperty("GITHUB_JWKS_URL");

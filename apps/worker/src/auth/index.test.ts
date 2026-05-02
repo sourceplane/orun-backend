@@ -36,6 +36,7 @@ function makeEnv(dbOverride?: D1Database, extra: Partial<Env> = {}): Env {
   const { db } = makeFakeDb();
   return {
     COORDINATOR: {} as any,
+    RATE_LIMITER: {} as any,
     STORAGE: {} as any,
     DB: dbOverride ?? db,
     GITHUB_JWKS_URL: TEST_JWKS_URL,
