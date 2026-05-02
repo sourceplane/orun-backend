@@ -173,10 +173,11 @@ export class D1Index {
 
     await this.db
       .prepare(
-        `DELETE FROM jobs WHERE namespace_id IN (
-           SELECT namespace_id FROM runs WHERE expires_at <= ?1
-         ) AND run_id IN (
-           SELECT run_id FROM runs WHERE expires_at <= ?1
+        `DELETE FROM jobs WHERE EXISTS (
+           SELECT 1 FROM runs
+           WHERE runs.namespace_id = jobs.namespace_id
+             AND runs.run_id = jobs.run_id
+             AND runs.expires_at <= ?1
          )`
       )
       .bind(isoNow)

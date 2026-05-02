@@ -497,6 +497,36 @@ describe("D1Index", () => {
       const deleted = await d1.deleteExpiredRuns(new Date("2025-01-02T00:00:00.000Z"));
       expect(deleted).toBe(1);
     });
+
+    it("does not delete jobs for non-expired run with same run_id in another namespace", async () => {
+      // ns-A has run "shared-run" that is expired
+      await d1.createRun(makeRun("ns-A", "shared-run", { expiresAt: "2025-01-01T00:00:00.000Z" }));
+      await d1.upsertJob({
+        jobId: "job-a", runId: "shared-run", namespaceId: "ns-A",
+        component: "api", status: "success", runnerId: null,
+        startedAt: null, finishedAt: null, logRef: null,
+      });
+      // ns-B has run "shared-run" that is NOT expired (same run_id, different namespace)
+      await d1.createRun(makeRun("ns-B", "shared-run", { expiresAt: "2025-12-31T00:00:00.000Z" }));
+      await d1.upsertJob({
+        jobId: "job-b", runId: "shared-run", namespaceId: "ns-B",
+        component: "web", status: "pending", runnerId: null,
+        startedAt: null, finishedAt: null, logRef: null,
+      });
+
+      const deleted = await d1.deleteExpiredRuns("2025-06-01T00:00:00.000Z");
+      expect(deleted).toBe(1); // only ns-A's run deleted
+
+      // ns-B's run and its job must be intact
+      const remainingRuns = db.getTable("runs");
+      expect(remainingRuns).toHaveLength(1);
+      expect(remainingRuns[0].namespace_id).toBe("ns-B");
+
+      const remainingJobs = db.getTable("jobs");
+      expect(remainingJobs).toHaveLength(1);
+      expect(remainingJobs[0].namespace_id).toBe("ns-B");
+      expect(remainingJobs[0].job_id).toBe("job-b");
+    });
   });
 
   describe("namespace isolation in SQL", () => {
