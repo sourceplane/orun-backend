@@ -40,8 +40,16 @@ jobs:
         with:
           version: v0.4.3
 
-      - name: Execute
+      - name: Execute (PR - changed only)
+        if: github.event_name == 'pull_request'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: kiox -- orun run --changed
+
+      - name: Execute (production - all components)
+        if: github.event_name == 'push'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: kiox -- orun run
