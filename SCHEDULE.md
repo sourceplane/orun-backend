@@ -196,11 +196,20 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 09 — Dashboard UI
 
-Build a React/Next.js or equivalent web UI served from Cloudflare Pages:
-- Component list with job status
-- Run history per component
-- Log viewer (stream from R2)
-- GitHub OAuth login
+**Status**: Implemented (first slice).
+
+Build a static React/Vite/TypeScript operational dashboard served from Cloudflare Pages:
+- GitHub OAuth login via browser return flow (`returnTo` parameter)
+- Account/session view with auto-creation
+- Linked repo listing
+- Run history with status, filtering, and job counts
+- Run detail with jobs grouped by component
+- Job log viewer
+- `@orun/client` typed HTTP SDK for all dashboard API calls
+- `cloudflare-pages-turbo` component delivery (project: `orun-dashboard`)
+
+**Deferred**: Browser repo-link creation (requires safe token/install model proposal).
+See `spec/11-dashboard-ui.md` and `ai/proposals/task-0009-spec-update.md`.
 
 ### Task 10 — CLI Bootstrap (`orun backend init`)
 

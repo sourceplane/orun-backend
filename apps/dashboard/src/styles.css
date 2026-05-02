@@ -1,0 +1,464 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface-hover: #22252f;
+  --border: #2a2d37;
+  --text: #e4e6eb;
+  --text-dim: #8b8f9a;
+  --accent: #4f8ff7;
+  --success: #3fb950;
+  --warning: #d29922;
+  --error: #f85149;
+  --pending: #8b8f9a;
+  --radius: 4px;
+  --toolbar-h: 48px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: var(--text-dim);
+}
+
+/* Login */
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.login-card {
+  text-align: center;
+  padding: 3rem 2rem;
+}
+
+.login-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.login-subtitle {
+  color: var(--text-dim);
+  margin-bottom: 2rem;
+}
+
+.login-btn {
+  display: inline-block;
+  padding: 0.6rem 1.5rem;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.login-btn:hover {
+  opacity: 0.9;
+}
+
+/* Dashboard Layout */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--toolbar-h);
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.toolbar-left, .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.user-info {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.main-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+}
+
+/* Buttons */
+.btn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--surface-hover);
+}
+
+.btn-ghost {
+  border-color: transparent;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+/* Notice */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+/* Runs View */
+.runs-view {
+  max-width: 100%;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.panel-header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.filter-input {
+  flex: 1;
+  min-width: 200px;
+  max-width: 400px;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.repos-bar {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.repo-chip {
+  padding: 0.15rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+/* States */
+.state-msg {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.state-error {
+  color: var(--error);
+}
+
+/* Runs Table */
+.runs-table-wrap {
+  overflow-x: auto;
+}
+
+.runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.runs-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.runs-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.run-row {
+  cursor: pointer;
+}
+
+.run-row:hover {
+  background: var(--surface-hover);
+}
+
+.cell-id {
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.cell-repo {
+  max-width: 180px;
+}
+
+.cell-time {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+/* Status Chips */
+.status-chip {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius);
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.status-pending { background: #2a2d37; color: var(--pending); }
+.status-running { background: #1c3a5e; color: var(--accent); }
+.status-completed, .status-success { background: #1a3524; color: var(--success); }
+.status-failed { background: #3d1a1a; color: var(--error); }
+.status-cancelled, .status-skipped { background: #2a2d37; color: var(--text-dim); }
+
+.dry-run-badge {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.3rem;
+  background: #3d3520;
+  color: var(--warning);
+  border-radius: var(--radius);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.failed-count {
+  color: var(--error);
+  font-size: 0.7rem;
+}
+
+/* Run Detail */
+.run-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.run-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.detail-panels {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.jobs-panel {
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.jobs-panel h3, .log-panel h3 {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.job-group-header {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.job-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.job-item:hover {
+  background: var(--surface-hover);
+}
+
+.job-selected {
+  background: var(--surface-hover);
+  border-left: 2px solid var(--accent);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.status-pending { background: var(--pending); }
+.status-dot.status-running { background: var(--accent); }
+.status-dot.status-success { background: var(--success); }
+.status-dot.status-failed { background: var(--error); }
+.status-dot.status-skipped { background: var(--text-dim); }
+
+.job-id {
+  font-family: monospace;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.job-status {
+  color: var(--text-dim);
+  font-size: 0.65rem;
+}
+
+.job-runner {
+  color: var(--text-dim);
+  font-family: monospace;
+  font-size: 0.65rem;
+}
+
+.job-error {
+  color: var(--error);
+  font-size: 0.65rem;
+}
+
+/* Log Panel */
+.log-panel {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.log-content {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .detail-panels {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .jobs-panel {
+    max-height: 250px;
+  }
+
+  .filter-input {
+    min-width: 150px;
+  }
+
+  .runs-table td, .runs-table th {
+    padding: 0.4rem 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar {
+    padding: 0 0.5rem;
+  }
+
+  .main-content {
+    padding: 0.5rem;
+  }
+
+  .panel-header {
+    gap: 0.5rem;
+  }
+
+  .runs-table {
+    font-size: 0.7rem;
+  }
+}
