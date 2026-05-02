@@ -3,6 +3,7 @@ import type { RequestContext } from "../auth";
 import { OrunError } from "../auth/errors";
 import { json, corsHeaders } from "../http";
 import { assertNamespaceAccess } from "./runs";
+import { resolveSessionNamespaceIds } from "./accounts";
 import { R2Storage } from "@orun/storage";
 import { D1Index } from "@orun/storage";
 
@@ -58,10 +59,11 @@ export async function handleGetLog(rc: RouteContext): Promise<Response> {
   if (rc.authCtx.type === "oidc") {
     namespaceId = rc.authCtx.namespace.namespaceId;
   } else if (rc.authCtx.type === "session") {
+    const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
     const db = new D1Index(rc.env.DB);
     let found = false;
     namespaceId = "";
-    for (const nsId of rc.authCtx.allowedNamespaceIds) {
+    for (const nsId of resolved) {
       const run = await db.getRun(nsId, runId);
       if (run) {
         namespaceId = nsId;

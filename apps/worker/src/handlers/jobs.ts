@@ -5,6 +5,7 @@ import { OrunError } from "../auth/errors";
 import { json } from "../http";
 import { getCoordinator, coordinatorFetch } from "../coordinator";
 import { assertNamespaceAccess } from "./runs";
+import { resolveSessionNamespaceIds } from "./accounts";
 import { D1Index } from "@orun/storage";
 
 interface RouteContext {
@@ -177,8 +178,9 @@ export async function handleListJobs(rc: RouteContext): Promise<Response> {
   }
 
   if (rc.authCtx.type === "session") {
+    const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
     const db = new D1Index(rc.env.DB);
-    for (const nsId of rc.authCtx.allowedNamespaceIds) {
+    for (const nsId of resolved) {
       const run = await db.getRun(nsId, runId);
       if (run) {
         const jobs = await db.listJobs(nsId, runId);
@@ -206,8 +208,9 @@ export async function handleJobStatus(rc: RouteContext): Promise<Response> {
   }
 
   if (rc.authCtx.type === "session") {
+    const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
     const db = new D1Index(rc.env.DB);
-    for (const nsId of rc.authCtx.allowedNamespaceIds) {
+    for (const nsId of resolved) {
       const run = await db.getRun(nsId, runId);
       if (run) {
         const jobs = await db.listJobs(nsId, runId);
