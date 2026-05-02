@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 7,
-  "completed": [1, 2, 3, 4, 5, 6],
+  "current_task": 8,
+  "completed": [1, 2, 3, 4, 5, 6, 7],
   "repo_health": "green",
-  "next_focus": "task-0007-account-repo-linking",
+  "next_focus": "task-0008-orun-remote-state-client-integration",
   "last_verified": "2026-05-02",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
@@ -34,6 +34,11 @@
     "CI run 25244619107: orun-api-worker + orun-types detected (2 components × 3 envs → 6 jobs). Build, typecheck, Wrangler dry-run passed. Production deploy skipped. Unit tests not in CI (consistent with prior tasks).",
     "Verifier fixed 3 D1 mirror corruption bugs: (1) log upload no longer overwrites existing job status/runner/timestamps; (2) job update no longer erases existing logRef; (3) idempotent join now rejects when /state unavailable for plan checksum verification.",
     "89 worker tests pass locally (86 original + 3 verifier-added). 179 total tests across all packages.",
-    "Local kiox run: exec id orun-backend-20260502-cf0bfb, 6/6 jobs succeeded. Accepted risks: session reads use D1 only, idempotent join returns synthetic metadata, coordinator-backed responses missing namespaceSlug/logRef, rate-limit DO in-memory only."
+    "Local kiox run: exec id orun-backend-20260502-cf0bfb, 6/6 jobs succeeded. Accepted risks: session reads use D1 only, idempotent join returns synthetic metadata, coordinator-backed responses missing namespaceSlug/logRef, rate-limit DO in-memory only.",
+    "Task 0007 (account/repo linking) verified PASS and merged as PR #14.",
+    "5 new account endpoints under /v1/accounts/** with session auth. GitHub admin verification (repo admin + org-admin fallback). resolveSessionNamespaceIds unions JWT + D1 linked namespaces for all session read paths. 118 tests pass (29 new account tests). Task 0006 verifier fixes not regressed.",
+    "CI run 25249486863: orun-api-worker detected (1 component × 3 envs → 3 jobs). build+typecheck+wrangler dry-run passed. Production deploy skipped. Unit tests local-only.",
+    "Local kiox run: exec id orun-backend-20260502-fd929f, 3/3 jobs succeeded.",
+    "Accepted risks: unused assertNamespaceAccess import in jobs.ts/logs.ts (cosmetic); malformed GitHub JSON (missing id) would produce namespaceId 'undefined' (GitHub API contract guards this); rate-limit uses allowedNamespaceIds[0]??actor key for account routes (deterministic, documented)."
   ]
 }
