@@ -97,7 +97,7 @@ export class RunCoordinator {
         /^\/jobs\/([^/]+)\/(claim|update|heartbeat|status)$/,
       );
       if (jobMatch) {
-        const jobId = jobMatch[1];
+        const jobId = decodeURIComponent(jobMatch[1]);
         const action = jobMatch[2];
         if (action === "claim" && method === "POST")
           return this.handleClaim(jobId, request);
