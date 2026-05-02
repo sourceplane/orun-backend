@@ -14,11 +14,13 @@ For every cycle:
 3. Inspect open PRs, merged PRs, failing tests, stale READMEs
 4. Compare progress vs original goal
 5. Identify production-grade gaps, integration risks, missing seams
-6. Select next highest-leverage bounded task
-7. Generate detailed prompt file
-8. Wait for worker result
-9. Update state
-10. Repeat
+6. Inspect any outstanding `/ai/proposals/**` spec-change proposals
+7. Accept, revise, defer, or ask the user about proposals before baking them into new tasks
+8. Select next highest-leverage bounded task
+9. Generate detailed prompt file
+10. Wait for worker result
+11. Update state
+12. Repeat
 ---
 # Core Principle
 **Trust code reality over stale documentation.**
@@ -28,6 +30,39 @@ Always evaluate:
 - what passes quality gates
 - what contracts already exist
 - what next dependency unlocks the roadmap
+---
+# Spec Change Proposals
+Specs guide implementation, but implementation and verification may reveal that a spec is stale, incomplete, internally inconsistent, or missing a necessary seam.
+
+Workers are allowed to identify needed spec updates without being blocked by them.
+
+When an Implementer, Verifier, or the Orchestrator itself finds a spec update is needed, create a proposal file instead of silently changing direction:
+
+`/ai/proposals/task-0007-spec-update.md`
+
+Proposal files must include:
+
+# Proposal
+# Found By
+# Related Task
+# Current Spec Text / Contract
+# Repo Reality / New Information
+# Proposed Spec Change
+# Why This Is Needed
+# Impacted Files / Tasks
+# Compatibility / Migration Notes
+# Recommendation
+
+Rules:
+
+* If the change is a clarification that does not alter behavior or scope, the worker may include the docs/spec edit in the PR and mention it in the report.
+* If the change alters behavior, API contracts, security boundaries, persistence model, task scope, roadmap order, or user-facing semantics, the worker must write a proposal and keep implementation conservative until the Orchestrator decides.
+* If the task can proceed safely with a narrow assumption, the worker may continue and record that assumption in the report plus proposal.
+* If the task cannot proceed safely without the spec decision, the worker should stop at the proposal and report the blocker.
+* Verifiers must check whether implementation deviates from specs. If the deviation is reasonable but not authorized, they should request or write a proposal rather than treating every spec drift as automatic failure.
+* The Orchestrator reviews proposals during the operating loop. It may accept and generate a spec-update task, fold the change into the next implementation task, defer it with risk notes, reject it, or ask the user for an opinion.
+* Accepted proposals should be reflected in `/ai/state.json` notes and, when appropriate, in updated specs.
+
 ---
 # State File
 `/ai/state.json`
@@ -40,12 +75,15 @@ Always evaluate:
   "next_focus": "projects-worker",
   "last_verified": "2026-05-01"
 }
+```
 
 ⸻
 
 Task Files
 
 /ai/tasks/task-0007.md
+
+/ai/proposals/task-0007-spec-update.md when spec changes need Orchestrator review
 
 Every task file must contain:
 
@@ -70,6 +108,7 @@ Must:
 * inspect actual repo before coding
 * keep bounded context clean
 * respect contracts
+* create a proposal when specs need behavioral, contract, or scope changes
 * add tests
 * run lint/typecheck/test/build
 * create PR
@@ -83,6 +122,7 @@ Summary
 Files Changed
 Checks Run
 Assumptions
+Spec Proposals
 Remaining Gaps
 Next Task Dependencies
 PR Number
@@ -95,6 +135,7 @@ Must:
 
 * inspect prompt + PR + report
 * validate acceptance criteria
+* identify spec drift and ensure proposals exist for non-trivial spec changes
 * run quality gates
 * run local kiox/orun validation when available
 * inspect GitHub Actions logs, not just status summaries
@@ -112,6 +153,7 @@ Result: PASS|FAIL
 Checks
 Issues
 Risk Notes
+Spec Proposals
 Recommended Next Move
 
 Verifier Merge Protocol:
@@ -168,7 +210,7 @@ If repo is failing:
 
 If docs are stale:
 
-* trust code, update docs later
+* trust code, require a proposal for meaningful spec changes, update docs/specs intentionally
 
 If seams weak:
 
