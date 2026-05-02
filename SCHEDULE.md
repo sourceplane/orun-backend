@@ -190,6 +190,10 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ## Phase 3 — Dashboard & Bootstrap (Future)
 
+> **Prerequisite**: Task 0008.3 (live Cloudflare deployment) must be verified before Dashboard UI.
+> Live Worker URL: `https://orun-api.rahulvarghesepullely.workers.dev`
+> Stack version: `oci://ghcr.io/sourceplane/stack-tectonic:0.12.0`
+
 ### Task 09 — Dashboard UI
 
 Build a React/Next.js or equivalent web UI served from Cloudflare Pages:

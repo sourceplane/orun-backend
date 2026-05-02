@@ -6,13 +6,11 @@
     "bindings": [
       {
         "name": "COORDINATOR",
-        "class_name": "RunCoordinator",
-        "script_name": "orun-api"
+        "class_name": "RunCoordinator"
       },
       {
         "name": "RATE_LIMITER",
-        "class_name": "RateLimitCounter",
-        "script_name": "orun-api"
+        "class_name": "RateLimitCounter"
       }
     ]
   },
@@ -26,7 +24,8 @@
     {
       "binding": "DB",
       "database_name": "orun-db",
-      "database_id": "PLACEHOLDER"
+      "database_id": "536b10bc-8c63-42e8-bc56-457e636d3a6e",
+      "migrations_dir": "../../migrations"
     }
   ],
   "vars": {
@@ -35,5 +34,11 @@
   },
   "triggers": {
     "crons": ["*/15 * * * *"]
-  }
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RunCoordinator", "RateLimitCounter"]
+    }
+  ]
 }

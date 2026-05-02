@@ -16,6 +16,8 @@ spec:
     nodeVersion: "20"
     pnpmVersion: "10.12.1"
     productionBranch: main
+    wranglerConfig: wrangler.jsonc
+    migrationCommand: "pnpm exec wrangler d1 migrations apply orun-db --remote --config wrangler.jsonc"
   labels:
     team: platform
     layer: runtime

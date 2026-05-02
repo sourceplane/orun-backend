@@ -55,7 +55,7 @@ compositions:
   sources:
     - name: stack-tectonic
       kind: oci
-      ref: oci://ghcr.io/sourceplane/stack-tectonic:0.11.0
+      ref: oci://ghcr.io/sourceplane/stack-tectonic:0.12.0
 
 discovery:
   roots:
@@ -114,6 +114,8 @@ spec:
     nodeVersion: "20"
     pnpmVersion: "10.12.1"
     productionBranch: main
+    wranglerConfig: wrangler.jsonc
+    migrationCommand: "pnpm exec wrangler d1 migrations apply orun-db --remote --config wrangler.jsonc"
   labels:
     team: platform
     layer: runtime
@@ -199,16 +201,22 @@ jobs:
         with:
           version: v0.4.3
 
-      - name: Execute
+      - name: Execute (PR - changed only)
+        if: github.event_name == 'pull_request'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: kiox -- orun run --changed
+
+      - name: Execute (production - all components)
+        if: github.event_name == 'push'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: kiox -- orun run
 ```
 
-The `review-plan` job runs only on pull requests and compiles the changed-component plan without executing it. The `build-deploy` job runs on both PRs and pushes to `main`; `orun run` executes by default, so there is no `--execute` flag. GitHub Actions mode is auto-detected by `orun` in CI, so the workflow does not need an explicit `--gha` flag.
-
-Both checkout steps use `fetch-depth: 0` so `orun --changed` has enough git history to resolve the base/head diff. The workflow pins `kiox-action`'s `version` input to `v0.4.3` so CI does not depend on resolving the latest kiox release at runtime. CI logs must be inspected during verification to confirm `kiox -- orun plan --changed` and `kiox -- orun run --changed` actually ran.
+The `review-plan` job runs only on pull requests and compiles the changed-component plan without executing it. The `build-deploy` job uses `--changed` on PRs (for efficiency) but runs all components on production pushes to avoid the zero-job squash merge trap. Both checkout steps use `fetch-depth: 0` so `orun --changed` has enough git history to resolve the base/head diff.
 
 ---
 
@@ -290,9 +298,11 @@ PRs against stack-tectonic may be merged by the orun-backend team once all requi
 
 ### Known gaps to address
 
-| Gap | Composition | Change needed |
-|-----|-------------|---------------|
-| Structure check accepts only `wrangler.jsonc`, not `wrangler.toml` | `cloudflare-worker-turbo` | Update `verify-worker-structure` step to accept either file |
+No known gaps. As of stack-tectonic v0.12.0:
+- `cloudflare-worker-turbo` accepts both `wrangler.jsonc` and `wrangler.toml`
+- D1 migrations are supported via `migrationCommand`
+- Pre-deploy provisioning is supported via `preDeployCommand`
+- Post-deploy verification is supported via `smokeCommand`
 
 ---
 

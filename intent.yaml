@@ -9,7 +9,7 @@ compositions:
   sources:
     - name: stack-tectonic
       kind: oci
-      ref: oci://ghcr.io/sourceplane/stack-tectonic:0.11.0
+      ref: oci://ghcr.io/sourceplane/stack-tectonic:0.12.0
 
 discovery:
   roots:
