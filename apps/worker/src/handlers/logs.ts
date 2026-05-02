@@ -29,17 +29,23 @@ export async function handleUploadLog(rc: RouteContext): Promise<Response> {
   const logRef = await r2.writeLog(namespaceId, runId, jobId, content, { expiresAt });
 
   rc.ctx.waitUntil((async () => {
-    await db.upsertJob({
-      jobId,
-      runId,
-      namespaceId,
-      component: "",
-      status: "running",
-      runnerId: null,
-      startedAt: null,
-      finishedAt: null,
-      logRef,
-    });
+    const updated = await rc.env.DB
+      .prepare("UPDATE jobs SET log_ref = ?1 WHERE namespace_id = ?2 AND run_id = ?3 AND job_id = ?4")
+      .bind(logRef, namespaceId, runId, jobId)
+      .run();
+    if ((updated.meta?.changes ?? 0) === 0) {
+      await db.upsertJob({
+        jobId,
+        runId,
+        namespaceId,
+        component: "",
+        status: "pending",
+        runnerId: null,
+        startedAt: null,
+        finishedAt: null,
+        logRef,
+      });
+    }
   })());
 
   return json({ ok: true, logRef });

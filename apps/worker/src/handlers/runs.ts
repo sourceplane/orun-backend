@@ -112,6 +112,8 @@ export async function handleCreateRun(rc: RouteContext): Promise<Response> {
       if (state.plan.checksum !== plan.checksum) {
         throw new OrunError("CONFLICT", "Run exists with different plan checksum");
       }
+    } else {
+      throw new OrunError("INTERNAL_ERROR", "Cannot verify existing run state");
     }
     return json({ runId, status: "running", createdAt: new Date().toISOString() }, 200);
   }

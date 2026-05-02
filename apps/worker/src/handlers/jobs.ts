@@ -99,6 +99,10 @@ export async function handleUpdateJob(rc: RouteContext): Promise<Response> {
 
     const jobState = state.jobs[jobId];
     if (jobState) {
+      const existingRow = await rc.env.DB
+        .prepare("SELECT log_ref FROM jobs WHERE namespace_id = ?1 AND run_id = ?2 AND job_id = ?3")
+        .bind(namespaceId, runId, jobId)
+        .first<{ log_ref: string | null }>();
       await db.upsertJob({
         jobId,
         runId,
@@ -108,7 +112,7 @@ export async function handleUpdateJob(rc: RouteContext): Promise<Response> {
         runnerId: jobState.runnerId,
         startedAt: jobState.startedAt,
         finishedAt: jobState.finishedAt,
-        logRef: null,
+        logRef: existingRow?.log_ref ?? null,
       });
     }
   })());

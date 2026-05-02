@@ -348,6 +348,25 @@ describe("Worker API", () => {
       expect(resp.status).toBe(409);
     });
 
+    it("returns 500 when alreadyExists but /state fails", async () => {
+      const coordinatorStub = (env.COORDINATOR as unknown as { get: ReturnType<typeof vi.fn> }).get();
+      (coordinatorStub.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname === "/init") {
+          return new Response(JSON.stringify({ ok: true, alreadyExists: true }), { status: 200 });
+        }
+        if (url.pathname === "/state") {
+          return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+        }
+        return new Response("not found", { status: 404 });
+      });
+
+      const resp = await routeRequest(req("POST", "/v1/runs", { plan: validPlan, runId: "my-run" }), env, ctx);
+      expect(resp.status).toBe(500);
+      const data = await resp.json() as { code: string };
+      expect(data.code).toBe("INTERNAL_ERROR");
+    });
+
     it("invalid JSON returns INVALID_REQUEST", async () => {
       const r = new Request("https://api.orun.test/v1/runs", {
         method: "POST",
@@ -463,6 +482,39 @@ describe("Worker API", () => {
       const parsed = JSON.parse(capturedBody!);
       expect(parsed.runnerId).toBe("runner-1");
     });
+
+    it("preserves existing logRef when mirroring job update to D1", async () => {
+      const coordinatorStub = (env.COORDINATOR as unknown as { get: ReturnType<typeof vi.fn> }).get();
+      (coordinatorStub.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname.includes("/update")) {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        if (url.pathname === "/state") {
+          return new Response(JSON.stringify({
+            runId: "run-1", namespaceId: "123456", status: "running",
+            plan: { checksum: "abc", version: "1", jobs: [], createdAt: "t" },
+            jobs: { "job-1": { jobId: "job-1", component: "c", status: "success", deps: [], runnerId: "r1", startedAt: "t", finishedAt: "t", lastError: null, heartbeatAt: "t" } },
+            createdAt: "t", updatedAt: "t",
+          }), { status: 200 });
+        }
+        return new Response("", { status: 404 });
+      });
+
+      const dbPrep = (env.DB as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare;
+
+      const resp = await routeRequest(
+        req("POST", "/v1/runs/run-1/jobs/job-1/update", { runnerId: "runner-1", status: "success" }),
+        env, ctx,
+      );
+      expect(resp.status).toBe(200);
+      await ctx._flush();
+
+      const logRefQueries = dbPrep.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string).includes("SELECT log_ref FROM jobs"),
+      );
+      expect(logRefQueries.length).toBeGreaterThan(0);
+    });
   });
 
   describe("Heartbeat endpoint", () => {
@@ -568,6 +620,24 @@ describe("Worker API", () => {
 
       const resp = await routeRequest(req("GET", "/v1/runs/run-1/logs/job-1"), env, ctx);
       expect(resp.status).toBe(404);
+    });
+
+    it("log upload preserves existing D1 job fields via targeted UPDATE", async () => {
+      const dbPrep = (env.DB as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare;
+      const resp = await routeRequest(
+        new Request("https://api.orun.test/v1/runs/run-1/logs/job-1", {
+          method: "POST",
+          body: "log data",
+        }),
+        env, ctx,
+      );
+      expect(resp.status).toBe(200);
+      await ctx._flush();
+
+      const updateCalls = dbPrep.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string).includes("UPDATE jobs SET log_ref"),
+      );
+      expect(updateCalls.length).toBeGreaterThan(0);
     });
   });
 
