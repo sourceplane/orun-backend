@@ -1,4 +1,4 @@
-# Spec 07 — Account & Repo Linking
+# Spec 08 — Account & Repo Linking
 
 ## Scope
 

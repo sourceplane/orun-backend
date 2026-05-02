@@ -1,4 +1,4 @@
-# Spec 06 — Storage (`packages/storage`)
+# Spec 07 — Storage (`packages/storage`)
 
 ## Scope
 
@@ -27,7 +27,13 @@ export class R2Storage {
   constructor(private bucket: R2Bucket) {}
 
   /** Write job log. Content may be string or ReadableStream. */
-  async writeLog(namespaceId: string, runId: string, jobId: string, content: string | ReadableStream): Promise<string>;
+  async writeLog(
+    namespaceId: string,
+    runId: string,
+    jobId: string,
+    content: string | ReadableStream,
+    options?: { expiresAt?: string | Date }
+  ): Promise<string>;
   // Returns the R2 key (logRef) for later retrieval
 
   /** Read job log. Returns null if not found. */
@@ -53,11 +59,25 @@ export class R2Storage {
 The `writeLog` method must accept a `ReadableStream` for large logs:
 
 ```typescript
-async writeLog(namespaceId: string, runId: string, jobId: string, content: string | ReadableStream): Promise<string> {
+async writeLog(
+  namespaceId: string,
+  runId: string,
+  jobId: string,
+  content: string | ReadableStream,
+  options?: { expiresAt?: string | Date }
+): Promise<string> {
   const key = runLogPath(namespaceId, runId, jobId);
-  await this.bucket.put(key, content, {
+  const putOptions: R2PutOptions = {
     httpMetadata: { contentType: "text/plain; charset=utf-8" }
-  });
+  };
+  if (options?.expiresAt) {
+    putOptions.customMetadata = {
+      "expires-at": options.expiresAt instanceof Date
+        ? options.expiresAt.toISOString()
+        : options.expiresAt
+    };
+  }
+  await this.bucket.put(key, content, putOptions);
   return key;
 }
 ```
@@ -175,7 +195,7 @@ export class D1Index {
   async getRun(namespaceId: string, runId: string): Promise<Run | null>;
 
   /** Upsert a job row (called when job status changes). */
-  async upsertJob(job: Pick<Job, "jobId" | "runId" | "namespaceId" | "component" | "status" | "runnerId" | "startedAt" | "finishedAt" | "logRef">): Promise<void>;
+  async upsertJob(job: IndexedJobInput): Promise<void>;
 
   /** List jobs for a run. */
   async listJobs(namespaceId: string, runId: string): Promise<Job[]>;
@@ -183,7 +203,18 @@ export class D1Index {
   /** Delete all rows for expired runs (GC). */
   async deleteExpiredRuns(): Promise<number>;
 }
+
+export type IndexedJobInput = Pick<
+  Job,
+  "jobId" | "runId" | "component" | "status" | "runnerId" | "startedAt" | "finishedAt" | "logRef"
+> & {
+  namespaceId: string;
+};
 ```
+
+`Job` itself does not contain `namespaceId`; callers pass `IndexedJobInput` when writing D1 rows.
+
+The D1 jobs table is a derived dashboard index, not the authoritative coordinator state. It currently stores `job_id`, `run_id`, `namespace_id`, `component`, `status`, `runner_id`, `started_at`, `finished_at`, and `log_ref`. Fields such as `deps`, `lastError`, and `heartbeatAt` are available from the coordinator, not D1; `listJobs()` returns empty/null values for those fields unless a later migration stores them.
 
 ### D1 Write Strategy
 
@@ -224,6 +255,8 @@ Default: runs expire 24 hours after creation.
 The scheduled Worker (defined in the Worker spec) calls:
 1. `d1Index.deleteExpiredRuns()` — remove expired D1 rows
 2. `r2Storage.deleteRun(namespaceId, runId)` — remove R2 objects
+
+`deleteExpiredRuns()` must delete jobs by correlated `(namespace_id, run_id)` pairs. Do not use independent `namespace_id IN (...)` and `run_id IN (...)` subqueries, because identical run IDs can exist in different namespaces.
 
 With a linked premium account, retention extends to 30 days (configurable). The `expires_at` field is set at run creation time based on the account's retention policy.
 

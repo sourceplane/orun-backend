@@ -27,7 +27,7 @@ The critical design insight driving this order: **build the cloud control plane 
                            │
                ┌───────────┴───────────┐
                ▼                       ▼
-    [07] Account/Repo Linking   [08] CLI Integration (Go)
+    [07] Account/Repo Linking   [08] orun Remote State Client
                │
                ▼
      [09] Dashboard UI (future)
@@ -165,19 +165,24 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ---
 
-### Task 08 — CLI Remote Backend Integration (Go)
+### Task 08 — orun Remote State Client Integration (Go)
 
 **Delegate to**: 1 agent  
 **Input spec**: `spec/09-cli-integration.md`  
 **Depends on**: Task 06 (backend must be deployed or mockable)  
 **Deliverables**:
-- `internal/backend/remote/client.go` — HTTP client implementing `BackendClient` interface
-- `internal/backend/remote/auth.go` — OIDC token fetching from GitHub Actions
-- `cmd/orun/command_run.go` modification — add `--remote` flag
-- `StateBackend` interface extraction in CLI (see CLI spec section)
-- Integration tests against a test Worker instance
+- Work in the cloned `sourceplane/orun` repository for CLI changes.
+- `internal/statebackend` or equivalent package defining a `StateBackend` interface.
+- `FileStateBackend` that wraps existing `.orun/executions/{execID}` behavior and preserves `orun status`, `orun logs`, resume, and retry compatibility.
+- `RemoteStateBackend` and HTTP client for orun-backend, including OIDC token fetching in GitHub Actions.
+- `cmd/orun/command_run.go` modification — add `--remote-state` and `--backend-url` without breaking existing `orun run [component|planhash]` behavior.
+- `cmd/orun/command_status.go` and `cmd/orun/command_logs.go` remote-state support.
+- `intent.yaml` schema/model support for `execution.state.mode: remote` and optional `execution.state.backendUrl`.
+- Stable run/job runtime IDs that include the plan ID and expose `ORUN_PLAN_ID`, `ORUN_EXEC_ID`, `ORUN_JOB_ID`, and `ORUN_JOB_RUN_ID` to steps.
+- Backend changes in `sourceplane/orun-backend` if needed: deterministic `CreateRunRequest.runId`, idempotent create/join, runner-owned updates, and run/job read endpoints.
+- Unit and integration tests in both repos as applicable.
 
-**Notes for agent**: The Go CLI must remain fully backward-compatible. `orun run` (no flag) must work identically to before. All new code is additive.
+**Notes for agent**: The Go CLI must remain fully backward-compatible. `orun run` without `--remote-state` must work identically to before. The old `--remote` contract is not the target; use `--remote-state`.
 
 ---
 
@@ -215,10 +220,11 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 
 ### Phase 2 complete when:
 
-- [ ] `orun run --remote --job api.deploy` succeeds in a GitHub Actions test workflow
-- [ ] Multiple GitHub Actions jobs in a matrix run coordinate correctly
-- [ ] `orun status --remote` shows correct run state
-- [ ] `orun logs --remote --job api.deploy` shows logs
+- [ ] `orun run <plan-id> --remote-state --job <job-id>` succeeds in a GitHub Actions test workflow
+- [ ] Multiple GitHub Actions jobs in a matrix run coordinate correctly against the same plan/run ID
+- [ ] `orun run <plan-id> --env dev --remote-state` and `orun run <plan-id> --env stage --remote-state` can run separately and wait for dependencies
+- [ ] `orun status --remote-state --exec-id <run-id>` shows correct run state
+- [ ] `orun logs --remote-state --exec-id <run-id> --job <job-id>` shows logs
 
 ---
 

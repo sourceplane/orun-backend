@@ -54,7 +54,7 @@ Each deployable unit (anything with a `wrangler.jsonc`) and each shared package 
 **Key exports**:
 - `RunStatus`, `JobStatus` enums
 - `Run`, `Job`, `LogRef` interfaces
-- `ClaimRequest`, `ClaimResult`, `UpdateRequest` (API payloads)
+- `ClaimJobRequest`, `ClaimResult`, `UpdateJobRequest` (API payloads)
 - `OIDCClaims`, `SessionClaims` (auth types)
 - `Namespace` (holds `namespaceId` + `namespaceSlug`)
 - `ApiError` response shape
@@ -88,7 +88,8 @@ Each deployable unit (anything with a `wrangler.jsonc`) and each shared package 
 **Key exports**:
 - `R2Storage`: methods for reading/writing logs and plans
 - `D1Index`: methods for writing/querying the dashboard index
-- Path utilities: `runLogPath(namespaceId, runId, jobId)`, etc.
+
+Uses path utilities from `@orun/types/paths`: `runLogPath(namespaceId, runId, jobId)`, `planPath(namespaceId, checksum)`, and `coordinatorKey(namespaceId, runId)`.
 
 **Tectonic component type**: `turbo-package`
 
@@ -167,8 +168,10 @@ metadata:
   name: orun-backend
 providers:
   orun:
-    source: ghcr.io/sourceplane/orun:v0.9.6
+    source: ghcr.io/sourceplane/orun:v1.11.0
 ```
+
+`kiox.lock` is committed and must stay in sync with `kiox.yaml`. As of the current repo state, both pin `ghcr.io/sourceplane/orun:v1.11.0`.
 
 ### `component.yaml` per deliverable unit
 

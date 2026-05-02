@@ -4,7 +4,7 @@
 
 orun-backend is the cloud control plane for the [orun CLI](https://github.com/sourceplane/orun) — a policy-aware workflow compiler that turns CI/CD intents into executable plan DAGs.
 
-When multiple GitHub Actions runners execute `orun run --remote --job <id>` concurrently, they need a shared coordination layer: to claim jobs atomically, check dependency status, and report results. This backend provides that coordination layer, hosted entirely on Cloudflare.
+When multiple GitHub Actions runners execute `orun run <plan-id> --remote-state` concurrently, they need a shared coordination layer: to claim jobs atomically, check dependency status, and report results. This backend provides that coordination layer, hosted entirely on Cloudflare.
 
 ---
 

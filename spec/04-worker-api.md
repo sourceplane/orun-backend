@@ -1,4 +1,4 @@
-# Spec 03 — Worker API (`packages/worker`)
+# Spec 04 — Worker API (`packages/worker`)
 
 ## Scope
 
@@ -34,6 +34,7 @@ All endpoints are prefixed `/v1/`. The Worker returns JSON for all responses.
 | `POST` | `/v1/runs/:runId/jobs/:jobId/claim` | OIDC | Atomically claim a job |
 | `POST` | `/v1/runs/:runId/jobs/:jobId/update` | OIDC | Update job status (success/failed) |
 | `POST` | `/v1/runs/:runId/jobs/:jobId/heartbeat` | OIDC | Send heartbeat to prevent abandonment |
+| `GET` | `/v1/runs/:runId/jobs` | OIDC or Session | List indexed jobs for status views |
 | `GET` | `/v1/runs/:runId/jobs/:jobId/status` | OIDC or Session | Get job status |
 | `GET` | `/v1/runs/:runId/runnable` | OIDC | Get list of claimable jobs |
 
@@ -165,12 +166,14 @@ The Worker forwards relevant requests as sub-requests to the DO's `fetch` method
 
 **Actions**:
 1. Extract namespace from auth context
-2. Generate `runId` = `nanoid()` or `crypto.randomUUID()`
-3. Call `coordinator.fetch(new Request("/init", { method: "POST", body: JSON.stringify({ plan, runId, namespace }) }))`
+2. Use `body.runId` when supplied, otherwise generate `runId` = `nanoid()` or `crypto.randomUUID()`
+3. Call `coordinator.fetch(new Request("/init", { method: "POST", body: JSON.stringify({ plan, runId, namespaceId: namespace.namespaceId, namespaceSlug: namespace.namespaceSlug }) }))`
 4. Write run row to D1 via `D1Index.createRun(run)`
 5. Optionally store plan in R2 via `R2Storage.savePlan(namespace.namespaceId, plan)`
 
 **Response**: `201 CreateRunResponse`
+
+When `runId` is client-supplied, creation must be idempotent for the same namespace/run pair. This is required for `orun run <plan-ref> --remote-state` in matrix jobs where several runners may initialize the same run concurrently.
 
 ---
 
@@ -186,7 +189,19 @@ The Worker forwards relevant requests as sub-requests to the DO's `fetch` method
 
 **Response**: `200 ClaimResult`
 
-If `claimed: false`, return `200` not `409` — the runner should interpret the status.
+If `claimed: false`, return `200` not `409` — the runner should interpret the status. The coordinator currently returns the package-local extended shape `CoordinatorClaimResult`, which may include `depsWaiting` or `depsBlocked` in addition to the public `ClaimResult` union.
+
+### `POST /v1/runs/:runId/jobs/:jobId/update`
+
+**Request body**: `{ runnerId: string; status: "success" | "failed"; error?: string }`
+
+**Actions**:
+1. Verify OIDC auth
+2. Enforce namespace access
+3. Forward to coordinator as `CoordinatorUpdateJobRequest`
+4. After a successful coordinator response, mirror the job/run summary into D1 with `ctx.waitUntil(...)`
+
+The Worker must not drop `runnerId`; the coordinator uses it to reject updates from a runner that no longer owns the job.
 
 ---
 
@@ -195,7 +210,7 @@ If `claimed: false`, return `200` not `409` — the runner should interpret the 
 **Actions**:
 1. Verify OIDC auth
 2. Read request body as text stream
-3. Write to R2: `env.STORAGE.put(runLogPath(namespaceId, runId, jobId), body)`
+3. Write to R2 via `R2Storage.writeLog(namespaceId, runId, jobId, body, { expiresAt })`
 4. Update D1 `jobs` row with `logRef`
 
 **Response**: `200 { ok: true }`

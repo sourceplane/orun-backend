@@ -1,10 +1,19 @@
-# Spec 02 — Shared Types Package (`@orun/types`)
+# Spec 03 — Shared Types Package (`@orun/types`)
 
 ## Scope
 
 This spec defines every shared TypeScript type, interface, and enum. This package is a dependency of all other packages. It is **type-only** — no runtime code.
 
 **Agent task**: Implement `packages/types/src/index.ts` with all exports below.
+
+## Current Contract Notes
+
+The current implementation intentionally keeps a small public API contract in `@orun/types` and lets integration packages define narrower internal request/response shapes where needed:
+
+- `ClaimResult` does not expose dependency-specific flags. `packages/coordinator` exports `CoordinatorClaimResult`, which adds optional `depsBlocked` and `depsWaiting` for Worker/CLI coordination.
+- `UpdateJobRequest` does not include `runnerId`. `packages/coordinator` exports `CoordinatorUpdateJobRequest`, which requires `runnerId` so the DO can enforce claim ownership.
+- The `Plan` type below is the backend-normalized plan contract. The Go `sourceplane/orun` CLI uses `model.Plan` with `metadata.checksum`, job `id`, and `dependsOn`; the CLI remote-state task must normalize those fields to `checksum`, `jobId`, and `deps` before calling the backend.
+- Backend `JobStatus` uses `"success"` for terminal success. The current Go CLI local state uses `"completed"`; the remote-state client must translate between those values at the state backend boundary.
 
 ---
 
@@ -98,6 +107,8 @@ export interface Plan {
 ```typescript
 export interface CreateRunRequest {
   plan: Plan;
+  /** Optional deterministic run id used by distributed runners for the same plan. */
+  runId?: string;
   dryRun?: boolean;
   triggerType?: "ci" | "manual" | "api";
   actor?: string;
