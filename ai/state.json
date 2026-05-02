@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 3,
-  "completed": [1, 2],
+  "current_task": 4,
+  "completed": [1, 2, 3],
   "repo_health": "green",
-  "next_focus": "task-0003-coordinator",
+  "next_focus": "task-0004-storage",
   "last_verified": "2026-05-02",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
@@ -13,9 +13,12 @@
     "@orun/types exports all 23 types/interfaces from spec. paths.ts and package exports correct. 16 tests pass. All 5 packages typecheck/build/test clean.",
     "kiox.yaml and kiox.lock are consistent at orun v1.11.0 on origin/main after PR #6.",
     "workflow.yml uses kiox -- orun run --changed (not --gha). GHA mode is auto-detected by orun; CI confirmed 'gha' scope in output. Acceptable.",
-    "Task 0003 (coordinator) implementation complete. RunCoordinator DO implements all 8 internal endpoints, alarm GC, heartbeat takeover, dependency gating.",
-    "35 coordinator tests pass. All turbo tasks (typecheck/build/test/lint) pass across 5 packages. Wrangler dry-run confirms DO binding.",
-    "Spec contract gaps: ClaimResult missing depsBlocked/depsWaiting, UpdateJobRequest missing runnerId. Resolved with package-local types.",
-    "Task 0003 PR opened as PR #7 against main."
+    "Task 0003 (coordinator) verified PASS and merged as PR #7.",
+    "RunCoordinator DO implements all 8 internal endpoints, alarm GC, heartbeat takeover, dependency gating. 35 tests pass.",
+    "CI run 25240025318: orun-coordinator detected, verify-turbo-package passed (build+typecheck) for all 3 envs. Tests not in CI (turbo-package component type limitation).",
+    "Coordinator contract gaps: ClaimResult missing depsBlocked/depsWaiting, UpdateJobRequest missing runnerId. Resolved with package-local CoordinatorClaimResult/CoordinatorUpdateJobRequest.",
+    "Risk: coordinator tsconfig emits test files to dist (missing test exclusion vs. types package). Non-blocking cosmetic fix.",
+    "Risk: claims after run.status=failed allowed for independent jobs (undefined spec behavior, defensible design). Task 0006 may add fail-fast policy.",
+    "Tasks 0004 (storage) and 0005 (auth) are independent and can be delegated in parallel."
   ]
 }
