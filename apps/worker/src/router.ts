@@ -6,6 +6,7 @@ import { handleAuthGitHub, handleAuthGitHubCallback } from "./handlers/auth";
 import { handleCreateRun, handleListRuns, handleGetRun } from "./handlers/runs";
 import { handleClaimJob, handleUpdateJob, handleHeartbeat, handleRunnable, handleListJobs, handleJobStatus } from "./handlers/jobs";
 import { handleUploadLog, handleGetLog } from "./handlers/logs";
+import { handleCreateAccount, handleGetAccount, handleLinkRepo, handleListLinkedRepos, handleUnlinkRepo } from "./handlers/accounts";
 import { checkRateLimit } from "./rate-limit";
 
 interface RouteContext {
@@ -39,6 +40,11 @@ function route(method: string, path: string, handler: Handler, auth: Route["auth
 const routes: Route[] = [
   route("GET", "/v1/auth/github", handleAuthGitHub, "none", false),
   route("GET", "/v1/auth/github/callback", handleAuthGitHubCallback, "none", false),
+  route("POST", "/v1/accounts", handleCreateAccount, "session", true),
+  route("GET", "/v1/accounts/me", handleGetAccount, "session", true),
+  route("POST", "/v1/accounts/repos", handleLinkRepo, "session", true),
+  route("GET", "/v1/accounts/repos", handleListLinkedRepos, "session", true),
+  route("DELETE", "/v1/accounts/repos/:namespaceId", handleUnlinkRepo, "session", true),
   route("POST", "/v1/runs", handleCreateRun, "oidc_or_session", true),
   route("GET", "/v1/runs", handleListRuns, "session", true),
   route("GET", "/v1/runs/:runId", handleGetRun, "oidc_or_session", true),

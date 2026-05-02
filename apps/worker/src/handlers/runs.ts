@@ -6,6 +6,7 @@ import { json } from "../http";
 import { getCoordinator, coordinatorFetch } from "../coordinator";
 import { D1Index } from "@orun/storage";
 import { R2Storage } from "@orun/storage";
+import { resolveSessionNamespaceIds } from "./accounts";
 
 interface RouteContext {
   request: Request;
@@ -74,7 +75,10 @@ export async function handleCreateRun(rc: RouteContext): Promise<Response> {
     if (!bodyNs) {
       throw new OrunError("INVALID_REQUEST", "Session creates require namespaceId");
     }
-    assertNamespaceAccess(rc.authCtx, bodyNs);
+    const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
+    if (!resolved.includes(bodyNs)) {
+      throw new OrunError("FORBIDDEN", "Namespace access denied");
+    }
     namespaceId = bodyNs;
     const db = new D1Index(rc.env.DB);
     const nsRow = await rc.env.DB
@@ -176,8 +180,9 @@ export async function handleListRuns(rc: RouteContext): Promise<Response> {
   const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 1), 100);
   const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10) || 0, 0);
 
+  const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
   const db = new D1Index(rc.env.DB);
-  const runs = await db.listRuns(rc.authCtx.allowedNamespaceIds, limit, offset);
+  const runs = await db.listRuns(resolved, limit, offset);
   return json({ runs });
 }
 
@@ -199,8 +204,9 @@ export async function handleGetRun(rc: RouteContext): Promise<Response> {
   }
 
   if (rc.authCtx.type === "session") {
+    const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
     const db = new D1Index(rc.env.DB);
-    for (const nsId of rc.authCtx.allowedNamespaceIds) {
+    for (const nsId of resolved) {
       const run = await db.getRun(nsId, runId);
       if (run) return json({ run });
     }

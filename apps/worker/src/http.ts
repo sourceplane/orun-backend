@@ -4,7 +4,7 @@ import { OrunError } from "./auth/errors";
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Orun-Deploy-Token",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Orun-Deploy-Token, X-GitHub-Access-Token",
 };
 
 export function corsHeaders(): Record<string, string> {
