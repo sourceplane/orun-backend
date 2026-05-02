@@ -50,7 +50,7 @@ describe("buildGitHubOAuthRedirect", () => {
     expect(url.searchParams.get("redirect_uri")).toBe("https://api.orun.dev/v1/auth/github/callback");
 
     const state = url.searchParams.get("state")!;
-    expect(state.split(".")).toHaveLength(3);
+    expect(state.split(".").length).toBeGreaterThanOrEqual(2);
   });
 
   it("uses ORUN_PUBLIC_URL when set", async () => {
@@ -61,12 +61,50 @@ describe("buildGitHubOAuthRedirect", () => {
     const url = new URL(location);
     expect(url.searchParams.get("redirect_uri")).toBe("https://custom.example.com/v1/auth/github/callback");
   });
+
+  it("accepts valid returnTo with configured ORUN_DASHBOARD_URL", async () => {
+    const env = makeEnv({ ORUN_DASHBOARD_URL: "https://dashboard.example.com" } as any);
+    const req = makeRequest("https://api.orun.dev/v1/auth/github?returnTo=https://dashboard.example.com/callback");
+    const resp = await buildGitHubOAuthRedirect(req, env);
+    expect(resp.status).toBe(302);
+    const location = resp.headers.get("Location")!;
+    expect(location).toContain("github.com/login/oauth/authorize");
+  });
+
+  it("rejects returnTo with mismatched origin", async () => {
+    const env = makeEnv({ ORUN_DASHBOARD_URL: "https://dashboard.example.com" } as any);
+    const req = makeRequest("https://api.orun.dev/v1/auth/github?returnTo=https://evil.com/callback");
+    await expect(buildGitHubOAuthRedirect(req, env)).rejects.toThrow("returnTo origin not allowed");
+  });
+
+  it("rejects malformed returnTo URL", async () => {
+    const env = makeEnv({ ORUN_DASHBOARD_URL: "https://dashboard.example.com" } as any);
+    const req = makeRequest("https://api.orun.dev/v1/auth/github?returnTo=not-a-url");
+    await expect(buildGitHubOAuthRedirect(req, env)).rejects.toThrow("Invalid returnTo URL");
+  });
+
+  it("allows same-origin returnTo when ORUN_DASHBOARD_URL not set", async () => {
+    const req = makeRequest("https://api.orun.dev/v1/auth/github?returnTo=https://api.orun.dev/dashboard");
+    const resp = await buildGitHubOAuthRedirect(req, makeEnv());
+    expect(resp.status).toBe(302);
+  });
+
+  it("rejects cross-origin returnTo when ORUN_DASHBOARD_URL not set", async () => {
+    const req = makeRequest("https://api.orun.dev/v1/auth/github?returnTo=https://evil.com/steal");
+    await expect(buildGitHubOAuthRedirect(req, makeEnv())).rejects.toThrow("returnTo origin not allowed");
+  });
 });
 
 describe("handleGitHubOAuthCallback", () => {
-  async function getValidState(): Promise<string> {
-    const req = makeRequest("https://api.orun.dev/v1/auth/github");
-    const resp = await buildGitHubOAuthRedirect(req, makeEnv());
+  async function getValidState(returnTo?: string): Promise<string> {
+    const url = returnTo
+      ? `https://api.orun.dev/v1/auth/github?returnTo=${encodeURIComponent(returnTo)}`
+      : "https://api.orun.dev/v1/auth/github";
+    const env = returnTo
+      ? makeEnv({ ORUN_DASHBOARD_URL: new URL(returnTo).origin } as any)
+      : makeEnv();
+    const req = makeRequest(url);
+    const resp = await buildGitHubOAuthRedirect(req, env);
     const location = resp.headers.get("Location")!;
     return new URL(location).searchParams.get("state")!;
   }
@@ -119,6 +157,37 @@ describe("handleGitHubOAuthCallback", () => {
     expect(result.allowedNamespaceIds).toContain("300");
     expect(result.allowedNamespaceIds).not.toContain("200");
     expect(typeof result.sessionToken).toBe("string");
+    expect(result.returnTo).toBeUndefined();
+  });
+
+  it("returns returnTo when present in state", async () => {
+    const returnTo = "https://dashboard.example.com/callback";
+    const state = await getValidState(returnTo);
+    vi.restoreAllMocks();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    mockGitHubApis();
+
+    const req = makeRequest(`https://api.orun.dev/v1/auth/github/callback?code=testcode&state=${state}`);
+    const result = await handleGitHubOAuthCallback(req, makeEnv({ ORUN_DASHBOARD_URL: "https://dashboard.example.com" } as any));
+
+    expect(result.returnTo).toBe(returnTo);
+    expect(result.githubLogin).toBe("testuser");
+    expect(typeof result.sessionToken).toBe("string");
+  });
+
+  it("does not include GitHub access token in result", async () => {
+    const returnTo = "https://dashboard.example.com/callback";
+    const state = await getValidState(returnTo);
+    vi.restoreAllMocks();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    mockGitHubApis();
+
+    const req = makeRequest(`https://api.orun.dev/v1/auth/github/callback?code=testcode&state=${state}`);
+    const result = await handleGitHubOAuthCallback(req, makeEnv({ ORUN_DASHBOARD_URL: "https://dashboard.example.com" } as any));
+
+    const resultStr = JSON.stringify(result);
+    expect(resultStr).not.toContain("gho_testaccesstoken");
+    expect(resultStr).not.toContain("access_token");
   });
 
   it("rejects missing code", async () => {
@@ -134,16 +203,37 @@ describe("handleGitHubOAuthCallback", () => {
   });
 
   it("rejects invalid state signature", async () => {
-    const req = makeRequest("https://api.orun.dev/v1/auth/github/callback?code=testcode&state=bad.123.sig");
+    const req = makeRequest("https://api.orun.dev/v1/auth/github/callback?code=testcode&state=bad.sig");
     await expect(handleGitHubOAuthCallback(req, makeEnv())).rejects.toThrow("Invalid OAuth state");
+  });
+
+  it("rejects tampered state (modified returnTo)", async () => {
+    const { base64urlEncodeString } = await import("./base64url");
+    const { signHmac } = await import("./jwt");
+    const { base64urlEncode } = await import("./base64url");
+
+    const nonce = base64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const originalPayload = JSON.stringify({ nonce, exp, returnTo: "https://dashboard.example.com/callback" });
+    const originalData = base64urlEncodeString(originalPayload);
+    const sig = await signHmac(originalData, SESSION_SECRET);
+
+    const tamperedPayload = JSON.stringify({ nonce, exp, returnTo: "https://evil.com/steal" });
+    const tamperedData = base64urlEncodeString(tamperedPayload);
+    const tamperedState = `${tamperedData}.${base64urlEncode(sig)}`;
+
+    vi.restoreAllMocks();
+    const req = makeRequest(`https://api.orun.dev/v1/auth/github/callback?code=testcode&state=${tamperedState}`);
+    await expect(handleGitHubOAuthCallback(req, makeEnv())).rejects.toThrow("Invalid OAuth state signature");
   });
 
   it("rejects expired state", async () => {
     const { signHmac } = await import("./jwt");
-    const { base64urlEncode } = await import("./base64url");
+    const { base64urlEncode, base64urlEncodeString } = await import("./base64url");
     const nonce = base64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
     const expiredExp = Math.floor(Date.now() / 1000) - 10;
-    const data = `${nonce}.${expiredExp}`;
+    const payload = JSON.stringify({ nonce, exp: expiredExp });
+    const data = base64urlEncodeString(payload);
     const sig = await signHmac(data, SESSION_SECRET);
     const state = `${data}.${base64urlEncode(sig)}`;
 

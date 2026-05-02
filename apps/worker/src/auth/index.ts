@@ -81,5 +81,5 @@ export async function authenticate(
 export { OrunError } from "./errors";
 export { verifyOIDCToken, extractNamespaceFromOIDC, looksLikeOIDC } from "./oidc";
 export { issueSessionToken, verifySessionToken } from "./session";
-export { buildGitHubOAuthRedirect, handleGitHubOAuthCallback } from "./github-oauth";
+export { buildGitHubOAuthRedirect, handleGitHubOAuthCallback, type OAuthCallbackResult } from "./github-oauth";
 export { upsertNamespaceSlug } from "./namespace";

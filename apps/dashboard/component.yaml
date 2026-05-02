@@ -1,0 +1,26 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: orun-dashboard
+
+spec:
+  type: cloudflare-pages-turbo
+  domain: orun-backend
+  subscribe:
+    environments:
+      - dev
+      - staging
+      - production
+  inputs:
+    outputDir: dist
+    projectName: orun-dashboard
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+    productionBranch: main
+    smokeCommand: "curl -sf https://orun-dashboard.pages.dev | grep -q '</html>'"
+  labels:
+    team: platform
+    layer: runtime
+    surface: dashboard
+    runtime: cloudflare

@@ -73,14 +73,20 @@ function extractNamespaceFromOIDC(claims: OIDCClaims): Namespace {
 ### Step 1: Redirect to GitHub
 
 ```
-GET /v1/auth/github
+GET /v1/auth/github[?returnTo=<url>]
 
 → Redirect to: https://github.com/login/oauth/authorize
      ?client_id=<GITHUB_CLIENT_ID>
      &redirect_uri=<WORKER_URL>/v1/auth/github/callback
      &scope=read:user,read:org
-     &state=<stateless signed CSRF token: nonce.exp.hmac(nonce.exp, ORUN_SESSION_SECRET)>
+     &state=<base64url(JSON{nonce,exp[,returnTo]}).hmac_sig>
 ```
+
+When `returnTo` is provided:
+- If `ORUN_DASHBOARD_URL` is configured, `returnTo` must share that origin.
+- If `ORUN_DASHBOARD_URL` is not configured, `returnTo` must be same-origin with the Worker.
+- Invalid or disallowed `returnTo` is rejected with `INVALID_REQUEST`.
+- The signed state binds `returnTo` so it cannot be tampered during the OAuth round-trip.
 
 ### Step 2: GitHub Callback
 
@@ -101,7 +107,10 @@ GET /v1/auth/github/callback?code=<code>&state=<state>
 5. Extract allowed namespaces:
    allowedNamespaceIds = repos.filter(r => r.permissions.admin).map(r => String(r.id))
 6. Issue orun session JWT (see below)
-7. Return session token to client
+7a. If state contains returnTo: respond with 302 redirect to returnTo URL with
+    session data in URL fragment (#sessionToken=...&githubLogin=...&allowedNamespaceIds=...).
+    Never put session token in the query string. Never include GitHub access token.
+7b. If no returnTo: return JSON { sessionToken, githubLogin, allowedNamespaceIds }.
 ```
 
 ### Session JWT Structure
