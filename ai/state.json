@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 8,
-  "completed": [1, 2, 3, 4, 5, 6, 7],
+  "current_task": 9,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8],
   "repo_health": "green",
-  "next_focus": "task-0008-orun-remote-state-client-integration",
+  "next_focus": "task-0009-dashboard-ui",
   "last_verified": "2026-05-02",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
@@ -40,6 +40,6 @@
     "CI run 25249486863: orun-api-worker detected (1 component × 3 envs → 3 jobs). build+typecheck+wrangler dry-run passed. Production deploy skipped. Unit tests local-only.",
     "Local kiox run: exec id orun-backend-20260502-fd929f, 3/3 jobs succeeded.",
     "Accepted risks: unused assertNamespaceAccess import in jobs.ts/logs.ts (cosmetic); malformed GitHub JSON (missing id) would produce namespaceId 'undefined' (GitHub API contract guards this); rate-limit uses allowedNamespaceIds[0]??actor key for account routes (deterministic, documented).",
-    "Task 0008 (orun remote-state client) PR #52 verified FAIL on 2026-05-02. 3 hard blockers: (1) jobAlreadyCompleteError propagates as non-zero exit instead of exit 0; (2) RunnableResponse JSON tag is 'jobIds' but backend uses 'jobs'; (3) waitForJobRunnable never calls /runnable, only sleeps. PR #52 left open. Feedback left on PR. Implementation quality otherwise high — all go tests pass, auth/run-ID/conversion/status/logs all correct."
+    "Task 0008 (orun remote-state client) initially FAIL on 2026-05-02 with 3 hard blockers. Task 0008.1 fixed all three: (1) already-complete claims exit 0 via errors.As catch; (2) RunnableResponse JSON tag corrected to 'jobs'; (3) waitForJobRunnable now polls /runnable. PR #52 merged 2026-05-02 (squashed as 3be263b). CI green, go test ./... pass, race clean. Accepted risks: AfterJobTerminal/AfterStepLog ignore errors (best-effort), heartbeat uses context.Background in setup, waitForJobRunnable ignores delay param (uses internal 2s poll). No backend changes needed."
   ]
 }
