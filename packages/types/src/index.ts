@@ -67,6 +67,7 @@ export interface Plan {
 
 export interface CreateRunRequest {
   plan: Plan;
+  runId?: string;
   dryRun?: boolean;
   triggerType?: "ci" | "manual" | "api";
   actor?: string;
@@ -154,6 +155,7 @@ export interface ApiError {
 
 export interface Env {
   COORDINATOR: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace;
   STORAGE: R2Bucket;
   DB: D1Database;
   GITHUB_JWKS_URL: string;

@@ -9,6 +9,7 @@ const CLIENT_SECRET = "test-client-secret";
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     COORDINATOR: {} as any,
+    RATE_LIMITER: {} as any,
     STORAGE: {} as any,
     DB: {} as any,
     GITHUB_JWKS_URL: "https://example.com/.well-known/jwks",

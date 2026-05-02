@@ -13,6 +13,7 @@ const TEST_JWKS_URL = "https://token.actions.githubusercontent.com/.well-known/j
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     COORDINATOR: {} as any,
+    RATE_LIMITER: {} as any,
     STORAGE: {} as any,
     DB: {} as any,
     GITHUB_JWKS_URL: TEST_JWKS_URL,
