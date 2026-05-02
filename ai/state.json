@@ -1,7 +1,7 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": "8.3",
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3"],
+  "current_task": 9,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5"],
   "repo_health": "green",
   "next_focus": "task-0009-dashboard-ui",
   "last_verified": "2026-05-02",
@@ -16,12 +16,15 @@
     "Task 0006 (Worker API gateway) verified PASS and merged as PR #13.",
     "Task 0007 (account/repo linking) verified PASS and merged as PR #14.",
     "Task 0008 (orun remote-state client) verified PASS after Task 0008.1 fix.",
-    "Task 0008.2 (stack-tectonic deployment readiness) complete: v0.12.0 released with preDeployCommand, migrationCommand, smokeCommand, clear CI annotations, wrangler.toml support. PR #4 merged in stack-tectonic.",
-    "Task 0008.3 (live Cloudflare deployment) complete: D1 orun-db provisioned (536b10bc-8c63-42e8-bc56-457e636d3a6e), R2 orun-storage created, Worker deployed live, D1 migrations applied (0001_init + 0002_namespaces_account), Worker secrets configured (ORUN_SESSION_SECRET, ORUN_DEPLOY_TOKEN), health endpoint verified, CORS verified, auth error responses verified.",
-    "Live API: GET / returns {status:ok, service:orun-api}. Unauthorized requests return typed JSON {error,code} format. CORS preflight returns expected headers.",
-    "Production workflow fixed: PRs use --changed, main pushes use full orun run (no --changed) to avoid squash-merge zero-job trap.",
-    "Remote-state conformance workflow triggered but failed due to orun CLI plan resolution error (example intent missing compositions.sources). Not a backend issue — the backend OIDC auth path is ready.",
-    "GitHub OAuth login blocked until GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET Worker secrets are configured (requires GitHub OAuth app registration).",
-    "118 tests pass locally. 15 turbo tasks succeed. All builds/typechecks green."
+    "Task 0008.2 (stack-tectonic deployment readiness) complete: v0.12.0 released.",
+    "Task 0008.3 (live Cloudflare deployment) complete: Worker deployed, D1/R2 provisioned, OIDC ready.",
+    "Task 0008.4 (local state lock) verified PASS: flock-based cross-process locking, 16 tests, -race clean. PR #54 merged in sourceplane/orun.",
+    "Task 0008.5 (remote-state conformance) verified PASS: fixture fixed, workflows rewritten for OIDC, docs updated, backend decodeURIComponent bug fixed. Live conformance run 25257200379 on main passed 6/6 jobs. PR #55 merged in sourceplane/orun.",
+    "Live API: GET / returns {status:ok, service:orun-api}. Backend URL: https://orun-api.rahulvarghesepullely.workers.dev",
+    "Remote-state conformance proven: duplicate claim, dependency waiting, env fan-out, remote status/logs all working via GitHub Actions OIDC.",
+    "Residual: rate-limit.ts has unstaged local changes (20→100 tokens) not included in Task 8 scope.",
+    "Residual: Windows flock is no-op, local dep waiting returns error instead of polling, heartbeat timeout not deeply tested.",
+    "GitHub OAuth login still blocked until GITHUB_CLIENT_ID/SECRET Worker secrets configured.",
+    "153 backend tests pass locally. All turbo tasks succeed."
   ]
 }
