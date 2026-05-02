@@ -39,6 +39,7 @@
     "5 new account endpoints under /v1/accounts/** with session auth. GitHub admin verification (repo admin + org-admin fallback). resolveSessionNamespaceIds unions JWT + D1 linked namespaces for all session read paths. 118 tests pass (29 new account tests). Task 0006 verifier fixes not regressed.",
     "CI run 25249486863: orun-api-worker detected (1 component × 3 envs → 3 jobs). build+typecheck+wrangler dry-run passed. Production deploy skipped. Unit tests local-only.",
     "Local kiox run: exec id orun-backend-20260502-fd929f, 3/3 jobs succeeded.",
-    "Accepted risks: unused assertNamespaceAccess import in jobs.ts/logs.ts (cosmetic); malformed GitHub JSON (missing id) would produce namespaceId 'undefined' (GitHub API contract guards this); rate-limit uses allowedNamespaceIds[0]??actor key for account routes (deterministic, documented)."
+    "Accepted risks: unused assertNamespaceAccess import in jobs.ts/logs.ts (cosmetic); malformed GitHub JSON (missing id) would produce namespaceId 'undefined' (GitHub API contract guards this); rate-limit uses allowedNamespaceIds[0]??actor key for account routes (deterministic, documented).",
+    "Task 0008 (orun remote-state client) PR #52 verified FAIL on 2026-05-02. 3 hard blockers: (1) jobAlreadyCompleteError propagates as non-zero exit instead of exit 0; (2) RunnableResponse JSON tag is 'jobIds' but backend uses 'jobs'; (3) waitForJobRunnable never calls /runnable, only sleeps. PR #52 left open. Feedback left on PR. Implementation quality otherwise high — all go tests pass, auth/run-ID/conversion/status/logs all correct."
   ]
 }
