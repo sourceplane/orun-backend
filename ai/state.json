@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 4,
-  "completed": [1, 2, 3],
+  "current_task": 5,
+  "completed": [1, 2, 3, 4],
   "repo_health": "green",
-  "next_focus": "task-0004-storage",
+  "next_focus": "task-0005-auth",
   "last_verified": "2026-05-02",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
@@ -17,8 +17,13 @@
     "RunCoordinator DO implements all 8 internal endpoints, alarm GC, heartbeat takeover, dependency gating. 35 tests pass.",
     "CI run 25240025318: orun-coordinator detected, verify-turbo-package passed (build+typecheck) for all 3 envs. Tests not in CI (turbo-package component type limitation).",
     "Coordinator contract gaps: ClaimResult missing depsBlocked/depsWaiting, UpdateJobRequest missing runnerId. Resolved with package-local CoordinatorClaimResult/CoordinatorUpdateJobRequest.",
-    "Risk: coordinator tsconfig emits test files to dist (missing test exclusion vs. types package). Non-blocking cosmetic fix.",
+    "Risk: coordinator tsconfig emits stale test files to dist (pre-existing cosmetic issue, new builds clean per tsconfig exclusion added in Task 0004).",
     "Risk: claims after run.status=failed allowed for independent jobs (undefined spec behavior, defensible design). Task 0006 may add fail-fast policy.",
-    "Tasks 0004 (storage) and 0005 (auth) are independent and can be delegated in parallel."
+    "Task 0004 (@orun/storage) verified PASS and merged as PR #8.",
+    "R2Storage and D1Index implement all required methods. Migrations 0001/0002 match spec exactly. 42 tests pass (18 R2 + 24 D1).",
+    "CI run 25241213120: orun-storage detected, verify-turbo-package passed (build+typecheck) for all 3 envs. 2 components × 3 envs → 6 jobs.",
+    "Verifier fixed: deleteExpiredRuns SQL had cross-namespace over-delete bug (independent namespace_id IN + run_id IN subqueries). Fixed to correlated EXISTS subquery. New test added.",
+    "Storage risk: D1 tests use fake, not real D1. Fake correctly validates behavior but cannot catch D1-specific SQL dialect issues.",
+    "Task 0005 (auth) is unblocked and can proceed. Task 0006 (Worker API) depends on storage + auth."
   ]
 }
