@@ -117,8 +117,9 @@ Recommended Next Move
 Verifier Merge Protocol:
 
 * Prefer `/Users/irinelinson/.local/bin/kiox` when `kiox` is not on `PATH`
-* Run `kiox -- orun plan` and `kiox -- orun run` locally when the task touches delivery wiring
+* Run `/Users/irinelinson/.local/bin/kiox -- orun plan --changed` and `/Users/irinelinson/.local/bin/kiox -- orun run --changed` locally when the task touches delivery wiring or component-scoped code
 * Check PR CI logs with `gh`, including successful jobs, to confirm expected commands actually ran
+* Verify PR CI logs show `kiox -- orun plan --changed` in Review Plan and `kiox -- orun run --changed` in Build & Deploy when applicable
 * If verification adds a report or small verification-only fix, commit it to the PR branch, push, and wait for CI again
 * Merge only after local checks and PR CI logs are both acceptable
 * After merge, checkout `main` locally and fast-forward pull from `origin/main`

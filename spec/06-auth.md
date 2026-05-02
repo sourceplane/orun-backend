@@ -1,4 +1,4 @@
-# Spec 05 — Authentication (`packages/worker/src/auth`)
+# Spec 06 — Authentication (`packages/worker/src/auth`)
 
 ## Scope
 

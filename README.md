@@ -2,7 +2,7 @@
 
 The cloud control plane for the [orun CLI](https://github.com/sourceplane/orun) — a policy-aware workflow compiler that turns CI/CD intents into executable plan DAGs.
 
-When multiple GitHub Actions runners execute `orun run --remote --job <id>` concurrently, they use this backend to coordinate: claim jobs atomically, check dependency status, and report results without race conditions.
+When multiple GitHub Actions runners execute `orun run <plan-id> --remote-state` concurrently, they use this backend to coordinate: claim jobs atomically, check dependency status, and report results without race conditions.
 
 Built entirely on Cloudflare: Workers, Durable Objects, R2, and D1.
 
@@ -49,33 +49,33 @@ GitHub Actions Runner          Browser (UI)
 ### Prerequisites
 
 - Node.js 20+
-- npm 10+
+- pnpm 10+
 - Cloudflare account with Workers Paid plan (for Durable Objects)
 - `wrangler` CLI
 
 ### Install
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Local Development
 
 ```bash
-npm run dev
+pnpm run dev
 # Starts wrangler dev with Miniflare — no Cloudflare account needed
 ```
 
 ### Type Check
 
 ```bash
-npm run typecheck
+pnpm run typecheck
 ```
 
 ### Test
 
 ```bash
-npm test
+pnpm test
 ```
 
 ### Deploy
@@ -127,25 +127,26 @@ GET    /v1/accounts/repos                    List linked repos
 
 ---
 
-## CLI Usage (with gluon CLI)
+## CLI Usage
 
 ```bash
-# Run distributed (remote coordination)
-orun run --remote --job api.deploy
+# Run distributed with backend-backed state
+orun run 0b673779a274 --remote-state
 
 # Check run status
-gluon status --remote
+orun status --remote-state --exec-id gh-123456789-1-0b673779a274
 
 # View logs
-gluon logs --remote --job api.deploy
+orun logs --remote-state --exec-id gh-123456789-1-0b673779a274 --job api-edge-worker@production.deploy-worker
 ```
 
 GitHub Actions:
 ```yaml
 - name: Run pipeline
   env:
-    GLUON_BACKEND_URL: ${{ vars.GLUON_BACKEND_URL }}
-  run: orun run --remote --job ${{ matrix.job }}
+    ORUN_BACKEND_URL: ${{ vars.ORUN_BACKEND_URL }}
+    ORUN_REMOTE_STATE: "true"
+  run: orun run 0b673779a274 --job ${{ matrix.job }}
 ```
 
 ---
@@ -158,14 +159,15 @@ Implementation specs for each component are in `spec/`:
 |------|---------|
 | `spec/00-constitution.md` | Architectural principles — non-negotiables |
 | `spec/01-monorepo-structure.md` | Repo layout, tooling, conventions |
-| `spec/02-types-package.md` | `@orun/types` — all shared types |
-| `spec/03-worker-api.md` | Worker API endpoints and contracts |
-| `spec/04-coordinator-do.md` | RunCoordinator Durable Object |
-| `spec/05-auth.md` | OIDC + OAuth auth system |
-| `spec/06-storage.md` | R2 + D1 utilities and schema |
-| `spec/07-account-repo-linking.md` | Account model and repo linking |
-| `spec/08-cli-integration.md` | CLI ↔ backend HTTP contract |
-| `spec/09-rate-limiting.md` | Rate limiting |
+| `spec/02-devops.md` | orun/kiox CI/CD model |
+| `spec/03-types-package.md` | `@orun/types` shared types |
+| `spec/04-worker-api.md` | Worker API endpoints and contracts |
+| `spec/05-coordinator-do.md` | RunCoordinator Durable Object |
+| `spec/06-auth.md` | OIDC + OAuth auth system |
+| `spec/07-storage.md` | R2 + D1 utilities and schema |
+| `spec/08-account-repo-linking.md` | Account model and repo linking |
+| `spec/09-cli-integration.md` | `orun --remote-state` client integration |
+| `spec/10-rate-limiting.md` | Rate limiting |
 | `SCHEDULE.md` | Development schedule and delegation order |
 
 ---

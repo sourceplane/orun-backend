@@ -32,10 +32,10 @@ metadata:
   name: orun-backend
 providers:
   orun:
-    source: ghcr.io/sourceplane/orun:v0.9.6
+    source: ghcr.io/sourceplane/orun:v1.11.0
 ```
 
-Update the `source` tag when upgrading the orun runtime.
+Update the `source` tag when upgrading the orun runtime and regenerate/commit `kiox.lock` in the same change. As of the current repo state, `kiox.yaml` and `kiox.lock` are both pinned to `ghcr.io/sourceplane/orun:v1.11.0`.
 
 ---
 
@@ -182,28 +182,29 @@ jobs:
         uses: sourceplane/kiox-action@v2.1.2
 
       - name: Compile review-scoped plan
-        run: kiox -- orun plan
+        run: kiox -- orun plan --changed
 
   build-deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Initialize orun workspace
         uses: sourceplane/kiox-action@v2.1.2
-
-      - name: Compile full plan
-        run: kiox -- orun plan --view dag
 
       - name: Execute
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: kiox -- orun run --execute --gha
+        run: kiox -- orun run --changed
 ```
 
-The `review-plan` job runs only on pull requests and compiles the plan without executing it. The `build-deploy` job runs on both PRs and pushes to `main` — the `cloudflare-worker-turbo` composition's deploy step automatically skips on non-`main` branches and non-`production` environments.
+The `review-plan` job runs only on pull requests and compiles the changed-component plan without executing it. The `build-deploy` job runs on both PRs and pushes to `main`; `orun run` executes by default, so there is no `--execute` flag. GitHub Actions mode is auto-detected by `orun` in CI, so the workflow does not need an explicit `--gha` flag.
+
+Both checkout steps use `fetch-depth: 0` so `orun --changed` has enough git history to resolve the base/head diff. CI logs must be inspected during verification to confirm `kiox -- orun plan --changed` and `kiox -- orun run --changed` actually ran.
 
 ---
 

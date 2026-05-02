@@ -1,4 +1,4 @@
-# Spec 04 — RunCoordinator Durable Object (`packages/coordinator`)
+# Spec 05 — RunCoordinator Durable Object (`packages/coordinator`)
 
 ## Scope
 
@@ -7,6 +7,15 @@ The `RunCoordinator` Durable Object is the heart of distributed job execution. I
 **Agent task**: Implement `packages/coordinator/src/coordinator.ts` as a Durable Object class.
 
 One DO instance per run. Key = `coordinatorKey(namespaceId, runId)`.
+
+## Current Contract Notes
+
+The implemented coordinator exports package-local types instead of widening the shared `@orun/types` contract:
+
+- `CoordinatorClaimResult` includes `claimed`, optional `takeover`, optional `currentStatus`, and optional dependency flags `depsBlocked` / `depsWaiting`.
+- `CoordinatorUpdateJobRequest` includes `runnerId`, `status`, and optional `error`.
+
+Worker integration must use these coordinator-local shapes when forwarding requests to the DO.
 
 ---
 
@@ -110,7 +119,7 @@ else:
 
 Update a job's terminal status (success or failed).
 
-**Body**: `{ status: "success" | "failed"; error?: string }`
+**Body**: `{ runnerId: string; status: "success" | "failed"; error?: string }`
 
 **Response**: `{ ok: true }`
 

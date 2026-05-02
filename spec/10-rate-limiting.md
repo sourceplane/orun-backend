@@ -1,4 +1,4 @@
-# Spec 09 — Rate Limiting
+# Spec 10 — Rate Limiting
 
 ## Scope
 
