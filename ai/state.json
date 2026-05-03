@@ -1,11 +1,12 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 9,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5"],
+  "current_task": 10,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9],
   "repo_health": "green",
-  "next_focus": "task-0009-dashboard-ui",
-  "last_verified": "2026-05-02",
-  "live_worker_url": "https://orun-api.rahulvarghesepullely.workers.dev",
+  "next_focus": "task-0010-cli-bootstrap",
+  "last_verified": "2026-05-03",
+  "live_worker_url": "https://orun-api.sourceplane.ai",
+  "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
   "stack_version": "oci://ghcr.io/sourceplane/stack-tectonic:0.12.0",
   "notes": [
     "Task 0001 (monorepo scaffold) verified PASS and merged as PR #4.",
@@ -20,11 +21,12 @@
     "Task 0008.3 (live Cloudflare deployment) complete: Worker deployed, D1/R2 provisioned, OIDC ready.",
     "Task 0008.4 (local state lock) verified PASS: flock-based cross-process locking, 16 tests, -race clean. PR #54 merged in sourceplane/orun.",
     "Task 0008.5 (remote-state conformance) verified PASS: fixture fixed, workflows rewritten for OIDC, docs updated, backend decodeURIComponent bug fixed. Live conformance run 25257200379 on main passed 6/6 jobs. PR #55 merged in sourceplane/orun.",
-    "Live API: GET / returns {status:ok, service:orun-api}. Backend URL: https://orun-api.rahulvarghesepullely.workers.dev",
-    "Remote-state conformance proven: duplicate claim, dependency waiting, env fan-out, remote status/logs all working via GitHub Actions OIDC.",
-    "Residual: rate-limit.ts has unstaged local changes (20→100 tokens) not included in Task 8 scope.",
-    "Residual: Windows flock is no-op, local dep waiting returns error instead of polling, heartbeat timeout not deeply tested.",
-    "GitHub OAuth login still blocked until GITHUB_CLIENT_ID/SECRET Worker secrets configured.",
-    "153 backend tests pass locally. All turbo tasks succeed."
+    "Task 0009 (dashboard UI) verified PASS and merged as PR #20 (squash commit 7bfaadb). Dashboard at https://orun-dashboard.sourceplane.ai, API at https://orun-api.sourceplane.ai.",
+    "Live Dashboard: orun-dashboard deployed to Cloudflare Pages, serving HTML. All Worker secrets configured (GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, ORUN_SESSION_SECRET, ORUN_DASHBOARD_URL, ORUN_PUBLIC_URL, ORUN_DEPLOY_TOKEN).",
+    "OAuth login flow: complete post-merge CI deployment required before live browser login works. Code is correct (19 OAuth tests, 21 client tests). ORUN_DASHBOARD_URL=https://orun-dashboard.sourceplane.ai is set.",
+    "Residual: orun-dashboard.pages.dev login blocked by ORUN_DASHBOARD_URL origin check (expected — use primary domain).",
+    "Residual: full interactive visual QA (1440/768/390px) not performed; recommended as manual post-merge step.",
+    "Residual: rate-limit.ts has unstaged local changes (20→100 tokens) not included in any task scope.",
+    "156 tests pass (21 client + 126 worker + 9 dashboard). All turbo tasks succeed."
   ]
 }
