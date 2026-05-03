@@ -42,14 +42,27 @@ jobs:
 
       - name: Execute (PR - changed only)
         if: github.event_name == 'pull_request'
+        id: orun-pr
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: kiox -- orun run --changed
+        run: |
+          set -o pipefail
+          kiox -- orun run --changed 2>&1 | tee /tmp/orun-run.log
 
       - name: Execute (production - all components)
         if: github.event_name == 'push'
+        id: orun-push
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: kiox -- orun run
+        run: |
+          set -o pipefail
+          kiox -- orun run 2>&1 | tee /tmp/orun-run.log
+
+      - name: Show failed job logs
+        if: failure()
+        run: |
+          exec_id=$(grep -oP 'Run: \K\S+' /tmp/orun-run.log | tail -1)
+          echo "Fetching failed logs for exec-id: ${exec_id}"
+          kiox -- orun logs --exec-id "${exec_id}" --failed 2>&1 || true
