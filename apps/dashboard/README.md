@@ -34,8 +34,8 @@ The dashboard uses a browser OAuth return flow:
 
 ### Required GitHub OAuth App Configuration
 
-- **Authorization callback URL**: `https://orun-api.rahulvarghesepullely.workers.dev/v1/auth/github/callback`
-- **Homepage URL**: `https://orun-dashboard.pages.dev`
+- **Authorization callback URL**: `https://orun-api.sourceplane.ai/v1/auth/github/callback`
+- **Homepage URL**: `https://orun-dashboard.sourceplane.ai`
 
 ### Required Worker Secrets
 
@@ -53,7 +53,7 @@ Set `ORUN_DASHBOARD_URL` so the backend validates the `returnTo` origin:
 
 ```bash
 # Add to wrangler.jsonc vars or set as a secret
-ORUN_DASHBOARD_URL=https://orun-dashboard.pages.dev
+ORUN_DASHBOARD_URL=https://orun-dashboard.sourceplane.ai
 ```
 
 ## Cloudflare Pages Deployment
@@ -69,7 +69,8 @@ pnpm --filter @orun/dashboard exec wrangler pages deploy dist --project-name oru
 
 ### Production URL
 
-`https://orun-dashboard.pages.dev`
+- Primary: `https://orun-dashboard.sourceplane.ai`
+- Fallback: `https://orun-dashboard.pages.dev`
 
 ## Scripts
 

@@ -125,32 +125,35 @@ No new proposals added. The accepted proposal `ai/proposals/task-0009-spec-updat
 
 ## Remaining Gaps
 
-1. **Cloudflare Pages deploy not completed**: `CLOUDFLARE_ACCOUNT_ID` not set in local env. The Pages project `orun-dashboard` needs to be created via `wrangler pages project create orun-dashboard` with the appropriate Cloudflare account.
-2. **GitHub OAuth App not configured**: `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` Worker secrets need to be set. The GitHub OAuth App callback URL must point to `https://orun-api.rahulvarghesepullely.workers.dev/v1/auth/github/callback`.
-3. **Worker `ORUN_DASHBOARD_URL` not configured**: Must be set to `https://orun-dashboard.pages.dev` once the Pages project is live.
+1. **Pages custom domain CNAME**: `orun-dashboard.sourceplane.ai` is registered on the Pages project but needs a CNAME record (`orun-dashboard` → `orun-dashboard.pages.dev`, proxied). The wrangler OAuth token lacks DNS write permissions. Add via Cloudflare dashboard.
+2. **GitHub OAuth App secrets**: `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` Worker secrets need to be set once the OAuth app is registered (screenshot shows it's in progress).
+3. **`ORUN_SESSION_SECRET`**: Must be set as a Worker secret for JWT signing.
 4. **Full interactive visual QA**: Manual browser testing at 1440px/768px/390px recommended.
 
-### Manual Steps to Complete Live Deployment
+### Live Configuration Status
+
+| Item | Status |
+|------|--------|
+| Worker custom domain `orun-api.sourceplane.ai` | ✅ Active, API responding |
+| Pages project `orun-dashboard` | ✅ Created, deployed to `orun-dashboard.pages.dev` |
+| Pages custom domain `orun-dashboard.sourceplane.ai` | ⏳ Needs CNAME record |
+| Worker secret `ORUN_DASHBOARD_URL` | ✅ Set (`https://orun-dashboard.sourceplane.ai`) |
+| Worker secret `ORUN_PUBLIC_URL` | ✅ Set (`https://orun-api.sourceplane.ai`) |
+| Worker secret `GITHUB_CLIENT_ID` | ❌ Not set (waiting for OAuth app registration) |
+| Worker secret `GITHUB_CLIENT_SECRET` | ❌ Not set (waiting for OAuth app registration) |
+| Worker secret `ORUN_SESSION_SECRET` | ❌ Not set |
+
+### Manual Steps Remaining
 
 ```bash
-# 1. Create Cloudflare Pages project
-wrangler pages project create orun-dashboard
+# 1. Add CNAME in Cloudflare DNS dashboard for sourceplane.ai zone:
+#    Type: CNAME | Name: orun-dashboard | Content: orun-dashboard.pages.dev | Proxy: ON
 
-# 2. Deploy dashboard
-pnpm --filter @orun/dashboard build
-pnpm --filter @orun/dashboard exec wrangler pages deploy dist --project-name orun-dashboard
-
-# 3. Create GitHub OAuth App at https://github.com/settings/developers
-#    - Homepage URL: https://orun-dashboard.pages.dev
-#    - Callback URL: https://orun-api.rahulvarghesepullely.workers.dev/v1/auth/github/callback
-
-# 4. Configure Worker secrets
+# 2. After GitHub OAuth App is registered, set secrets:
 wrangler secret put GITHUB_CLIENT_ID --name orun-api
 wrangler secret put GITHUB_CLIENT_SECRET --name orun-api
 wrangler secret put ORUN_SESSION_SECRET --name orun-api
-
-# 5. Add ORUN_DASHBOARD_URL to wrangler.jsonc vars or as secret
-#    Value: https://orun-dashboard.pages.dev
+# (ORUN_SESSION_SECRET should be a random 32+ byte string)
 ```
 
 ## Next Task Dependencies

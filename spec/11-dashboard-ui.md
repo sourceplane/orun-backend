@@ -93,5 +93,5 @@ A static React/Vite/TypeScript operational dashboard served from Cloudflare Page
 
 - Component type: `cloudflare-pages-turbo` (stack-tectonic v0.12.0)
 - Project name: `orun-dashboard`
-- Production URL: `https://orun-dashboard.pages.dev`
+- Production URL: `https://orun-dashboard.sourceplane.ai` (CNAME to `orun-dashboard.pages.dev`)
 - Build output: `dist/`
