@@ -99,6 +99,7 @@ wrangler deploy --env production
 | `@orun/storage` | R2 + D1 typed utilities |
 | `@orun/worker` | Cloudflare Worker: API gateway + auth + routing |
 | `@orun/client` | HTTP client SDK for the API |
+| `@orun/dashboard` | Static operational dashboard (Cloudflare Pages) |
 
 ---
 
@@ -168,6 +169,7 @@ Implementation specs for each component are in `spec/`:
 | `spec/08-account-repo-linking.md` | Account model and repo linking |
 | `spec/09-cli-integration.md` | `orun --remote-state` client integration |
 | `spec/10-rate-limiting.md` | Rate limiting |
+| `spec/11-dashboard-ui.md` | Dashboard UI and browser OAuth flow |
 | `SCHEDULE.md` | Development schedule and delegation order |
 
 ---

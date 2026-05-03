@@ -21,30 +21,46 @@ export interface GitHubRepoPermission {
   permissions?: { admin?: boolean };
 }
 
-async function buildSignedState(secret: string): Promise<string> {
+interface StatePayload {
+  nonce: string;
+  exp: number;
+  returnTo?: string;
+}
+
+async function buildSignedState(secret: string, returnTo?: string): Promise<string> {
   const nonce = base64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
   const exp = Math.floor(Date.now() / 1000) + OAUTH_STATE_TTL_SECONDS;
-  const data = `${nonce}.${exp}`;
+  const payload: StatePayload = { nonce, exp };
+  if (returnTo) {
+    payload.returnTo = returnTo;
+  }
+  const data = base64urlEncodeString(JSON.stringify(payload));
   const sig = await signHmac(data, secret);
   return `${data}.${base64urlEncode(sig)}`;
 }
 
-async function verifySignedState(state: string, secret: string): Promise<void> {
-  const parts = state.split(".");
-  if (parts.length !== 3) {
+async function verifySignedState(state: string, secret: string): Promise<StatePayload> {
+  const dotIdx = state.lastIndexOf(".");
+  if (dotIdx === -1) {
     throw new OrunError("INVALID_REQUEST", "Invalid OAuth state");
   }
-  const [nonce, expStr, sigB64] = parts;
-  const data = `${nonce}.${expStr}`;
+  const data = state.slice(0, dotIdx);
+  const sigB64 = state.slice(dotIdx + 1);
   const sigBytes = base64urlDecode(sigB64);
   const valid = await verifyHmac(data, sigBytes, secret);
   if (!valid) {
     throw new OrunError("INVALID_REQUEST", "Invalid OAuth state signature");
   }
-  const exp = parseInt(expStr, 10);
-  if (isNaN(exp) || exp <= Math.floor(Date.now() / 1000)) {
+  let payload: StatePayload;
+  try {
+    payload = JSON.parse(base64urlDecodeString(data)) as StatePayload;
+  } catch {
+    throw new OrunError("INVALID_REQUEST", "Invalid OAuth state");
+  }
+  if (typeof payload.exp !== "number" || payload.exp <= Math.floor(Date.now() / 1000)) {
     throw new OrunError("INVALID_REQUEST", "OAuth state expired");
   }
+  return payload;
 }
 
 function requireSecret(env: Env, name: string): string {
@@ -63,6 +79,30 @@ function buildCallbackUrl(request: Request, env: Env): string {
   return `${url.origin}/v1/auth/github/callback`;
 }
 
+function validateReturnTo(returnTo: string, env: Env, request: Request): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(returnTo);
+  } catch {
+    throw new OrunError("INVALID_REQUEST", "Invalid returnTo URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new OrunError("INVALID_REQUEST", "Invalid returnTo URL");
+  }
+  if (env.ORUN_DASHBOARD_URL) {
+    const dashboardOrigin = new URL(env.ORUN_DASHBOARD_URL).origin;
+    if (parsed.origin !== dashboardOrigin) {
+      throw new OrunError("INVALID_REQUEST", "returnTo origin not allowed");
+    }
+  } else {
+    const requestOrigin = new URL(request.url).origin;
+    if (parsed.origin !== requestOrigin) {
+      throw new OrunError("INVALID_REQUEST", "returnTo origin not allowed");
+    }
+  }
+  return returnTo;
+}
+
 export async function buildGitHubOAuthRedirect(
   request: Request,
   env: Env,
@@ -70,7 +110,14 @@ export async function buildGitHubOAuthRedirect(
   const clientId = requireSecret(env, "GITHUB_CLIENT_ID");
   const sessionSecret = requireSecret(env, "ORUN_SESSION_SECRET");
 
-  const state = await buildSignedState(sessionSecret);
+  const url = new URL(request.url);
+  const returnToParam = url.searchParams.get("returnTo");
+  let returnTo: string | undefined;
+  if (returnToParam) {
+    returnTo = validateReturnTo(returnToParam, env, request);
+  }
+
+  const state = await buildSignedState(sessionSecret, returnTo);
   const redirectUri = buildCallbackUrl(request, env);
 
   const params = new URLSearchParams({
@@ -205,10 +252,17 @@ async function fetchOrgAdminRepoIds(accessToken: string): Promise<string[]> {
   return ids;
 }
 
+export interface OAuthCallbackResult {
+  sessionToken: string;
+  githubLogin: string;
+  allowedNamespaceIds: string[];
+  returnTo?: string;
+}
+
 export async function handleGitHubOAuthCallback(
   request: Request,
   env: Env,
-): Promise<{ sessionToken: string; githubLogin: string; allowedNamespaceIds: string[] }> {
+): Promise<OAuthCallbackResult> {
   const sessionSecret = requireSecret(env, "ORUN_SESSION_SECRET");
 
   const url = new URL(request.url);
@@ -222,7 +276,7 @@ export async function handleGitHubOAuthCallback(
     throw new OrunError("INVALID_REQUEST", "Missing OAuth state");
   }
 
-  await verifySignedState(state, sessionSecret);
+  const statePayload = await verifySignedState(state, sessionSecret);
 
   const redirectUri = buildCallbackUrl(request, env);
   const accessToken = await exchangeCodeForToken(code, env, redirectUri);
@@ -240,5 +294,5 @@ export async function handleGitHubOAuthCallback(
     sessionSecret,
   );
 
-  return { sessionToken, githubLogin: user.login, allowedNamespaceIds };
+  return { sessionToken, githubLogin: user.login, allowedNamespaceIds, returnTo: statePayload.returnTo };
 }
