@@ -247,7 +247,7 @@ For `dev` environment, `pnpm exec wrangler deploy --dry-run` is run instead of a
 | Secret | Description |
 |--------|-------------|
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID for Worker deployment |
-| `CLOUDFLARE_API_TOKEN` | API token with `Workers Scripts:Edit`, `Durable Objects:Edit`, `D1:Edit`, `R2:Edit` |
+| `CLOUDFLARE_API_TOKEN` | API token with `Workers Scripts:Edit`, `Durable Objects:Edit`, `D1:Edit`, `R2:Edit`, `Cloudflare Pages:Edit` |
 
 For local development, `wrangler dev` (from `apps/worker/`) runs the Worker locally with Miniflare — no Cloudflare account required.
 
@@ -277,6 +277,30 @@ pnpm exec turbo run test
 # Dry-run deploy (validates bundle without uploading)
 cd apps/worker && pnpm exec wrangler deploy --dry-run
 ```
+
+---
+
+## How the `cloudflare-pages-turbo` Composition Works
+
+The `cloudflare-pages-turbo` composition from stack-tectonic deploys the static dashboard to Cloudflare Pages:
+
+| Step | Action |
+|------|--------|
+| `setup-node` | Installs Node.js at `inputs.nodeVersion` |
+| `setup-pnpm` | Installs pnpm at `inputs.pnpmVersion` |
+| `install-workspace-dependencies` | Runs `pnpm install --no-frozen-lockfile` |
+| `pre-build` | Runs `inputs.preBuildCommand` if set, otherwise skips |
+| `verify-pages-app-structure` | Asserts `package.json` is present in the component directory |
+| `build-pages-app` | Runs `pnpm exec turbo run build --filter=./` (or `inputs.buildCommand`) |
+| `verify-build-output` | Asserts `inputs.outputDir` exists and lists files |
+| `ensure-pages-project` | Skips on non-production; GETs or creates the CF Pages project, then PATCHes `production_branch` |
+| `deploy-pages-artifact` | Skips on non-production / non-`productionBranch`; runs `pnpm exec wrangler pages deploy` |
+
+The deploy steps enforce:
+- `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (with `Cloudflare Pages:Edit`) must be set
+- Branch must be `refs/heads/<productionBranch>` and environment must be `production`
+
+The dashboard component is at `apps/dashboard/component.yaml`. Its Vite build env vars (e.g. `VITE_ORUN_API_BASE_URL`) must be committed in `apps/dashboard/.env.production` — the composition does not pass extra env vars to the build step.
 
 ---
 
