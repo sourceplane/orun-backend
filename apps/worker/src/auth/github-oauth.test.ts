@@ -332,3 +332,101 @@ describe("handleGitHubOAuthCallback", () => {
     expect(result.allowedNamespaceIds).toContain("2");
   });
 });
+
+describe("CLI OAuth loopback flow", () => {
+  async function getCliState(returnTo?: string): Promise<string> {
+    const baseUrl = "https://api.orun.dev/v1/auth/github?client=cli";
+    const url = returnTo ? `${baseUrl}&returnTo=${encodeURIComponent(returnTo)}` : baseUrl;
+    const req = new Request(url);
+    const resp = await buildGitHubOAuthRedirect(req, makeEnv());
+    const location = resp.headers.get("Location")!;
+    return new URL(location).searchParams.get("state")!;
+  }
+
+  function mockGitHubApis() {
+    fetchSpy.mockImplementation((async (input: any) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url === "https://github.com/login/oauth/access_token") {
+        return new Response(JSON.stringify({ access_token: "gho_cli_token" }), { status: 200 });
+      }
+      if (url === "https://api.github.com/user") {
+        return new Response(JSON.stringify({ login: "cliuser", id: 7 }), { status: 200 });
+      }
+      if (url.startsWith("https://api.github.com/user/repos")) {
+        return new Response(JSON.stringify([{ id: 777, full_name: "cliuser/repo", permissions: { admin: true } }]), { status: 200 });
+      }
+      if (url.startsWith("https://api.github.com/user/memberships/orgs")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response("Not Found", { status: 404 });
+    }) as any);
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  describe("buildGitHubOAuthRedirect with client=cli", () => {
+    it("accepts loopback returnTo for CLI client", async () => {
+      const req = new Request("https://api.orun.dev/v1/auth/github?client=cli&returnTo=http://127.0.0.1:4321/callback/nonce");
+      const resp = await buildGitHubOAuthRedirect(req, makeEnv());
+      expect(resp.status).toBe(302);
+    });
+
+    it("accepts localhost returnTo for CLI client", async () => {
+      const req = new Request("https://api.orun.dev/v1/auth/github?client=cli&returnTo=http://localhost:9999/cb");
+      const resp = await buildGitHubOAuthRedirect(req, makeEnv());
+      expect(resp.status).toBe(302);
+    });
+
+    it("rejects non-loopback returnTo for CLI client", async () => {
+      const req = new Request("https://api.orun.dev/v1/auth/github?client=cli&returnTo=https://evil.com/steal");
+      await expect(buildGitHubOAuthRedirect(req, makeEnv())).rejects.toThrow("loopback");
+    });
+
+    it("rejects https loopback for CLI client", async () => {
+      const req = new Request("https://api.orun.dev/v1/auth/github?client=cli&returnTo=https://127.0.0.1:4321/cb");
+      await expect(buildGitHubOAuthRedirect(req, makeEnv())).rejects.toThrow("loopback");
+    });
+  });
+
+  describe("handleGitHubOAuthCallback with CLI state", () => {
+    it("returns sessionKind=cli and refreshToken for CLI flow", async () => {
+      const state = await getCliState();
+      mockGitHubApis();
+
+      const req = new Request(`https://api.orun.dev/v1/auth/github/callback?code=clicode&state=${state}`);
+      const result = await handleGitHubOAuthCallback(req, makeEnv());
+
+      expect(result.sessionKind).toBe("cli");
+      expect(result.refreshToken).toBeDefined();
+      expect(result._refreshTokenHash).toBeDefined();
+      expect(result.refreshToken).not.toBe(result._refreshTokenHash);
+    });
+
+    it("includes refreshToken in loopback redirect fragment", async () => {
+      const state = await getCliState("http://127.0.0.1:4321/callback/nonce");
+      mockGitHubApis();
+
+      const req = new Request(`https://api.orun.dev/v1/auth/github/callback?code=clicode&state=${state}`);
+      const result = await handleGitHubOAuthCallback(req, makeEnv());
+
+      expect(result.returnTo).toBe("http://127.0.0.1:4321/callback/nonce");
+      expect(result.refreshToken).toBeDefined();
+    });
+
+    it("dashboard flow returns sessionKind=dashboard with no refreshToken", async () => {
+      const req = new Request("https://api.orun.dev/v1/auth/github");
+      const dashResp = await buildGitHubOAuthRedirect(req, makeEnv());
+      const state = new URL(dashResp.headers.get("Location")!).searchParams.get("state")!;
+      mockGitHubApis();
+
+      const cbReq = new Request(`https://api.orun.dev/v1/auth/github/callback?code=dashcode&state=${state}`);
+      const result = await handleGitHubOAuthCallback(cbReq, makeEnv());
+
+      expect(result.sessionKind).toBe("dashboard");
+      expect(result.refreshToken).toBeUndefined();
+    });
+  });
+});

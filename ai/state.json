@@ -1,10 +1,10 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 10,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9],
+  "current_task": 11,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10],
   "repo_health": "green",
-  "next_focus": "task-0010-cli-cloud-auth-backend",
-  "last_verified": "2026-05-03",
+  "next_focus": "task-0011-orun-cli-auth-local-remote-state",
+  "last_verified": "2026-05-06",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
   "stack_version": "oci://ghcr.io/sourceplane/stack-tectonic:0.12.0",
@@ -29,6 +29,7 @@
     "Residual: rate-limit.ts has unstaged local changes (20→100 tokens) not included in any task scope.",
     "156 tests pass (21 client + 126 worker + 9 dashboard). All turbo tasks succeed.",
     "Spec update d651f52 adds local remote-state auth requirement: GitHub Actions uses OIDC; local remote-state uses GitHub OAuth/device login and Orun-issued CLI session tokens; SaaS dispatch later uses signed execution requests plus repo runner identity.",
-    "Roadmap adjusted: Task 0010 is CLI cloud auth backend, Task 0011 is sourceplane/orun CLI auth + local remote-state auth, Task 0012 is local remote-state conformance, and CLI bootstrap moved to Task 0013."
+    "Roadmap adjusted: Task 0010 is CLI cloud auth backend, Task 0011 is sourceplane/orun CLI auth + local remote-state auth, Task 0012 is local remote-state conformance, and CLI bootstrap moved to Task 0013.",
+    "Task 0010 (CLI auth backend) verified PASS and merged as PR #27. Implements: browser OAuth loopback, backend-mediated GitHub device flow, Orun access/refresh tokens with SHA-256 hashed storage, refresh/logout endpoints, CLI session mutable route authorization, D1 migration 0003. 162/162 tests pass. Accepted residual risks: device endpoint rate limiting deferred (proposal at ai/proposals/task-0010-device-flow-rate-limiting.md), refresh token not rotated, no CLI session GC yet."
   ]
 }

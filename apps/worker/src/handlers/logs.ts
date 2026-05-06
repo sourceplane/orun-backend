@@ -2,7 +2,6 @@ import type { Env } from "@orun/types";
 import type { RequestContext } from "../auth";
 import { OrunError } from "../auth/errors";
 import { json, corsHeaders } from "../http";
-import { assertNamespaceAccess } from "./runs";
 import { resolveSessionNamespaceIds } from "./accounts";
 import { R2Storage } from "@orun/storage";
 import { D1Index } from "@orun/storage";
@@ -15,10 +14,33 @@ interface RouteContext {
   authCtx: RequestContext;
 }
 
+function assertMutableAccess(authCtx: RequestContext): void {
+  if (authCtx.type === "oidc") return;
+  if (authCtx.type === "session" && authCtx.sessionKind === "cli") return;
+  throw new OrunError("FORBIDDEN", "Dashboard sessions may not use mutable coordination routes");
+}
+
+async function resolveNamespaceForMutableAccess(
+  authCtx: RequestContext,
+  env: Env,
+  runId: string,
+): Promise<string> {
+  if (authCtx.type === "oidc") {
+    return authCtx.namespace.namespaceId;
+  }
+  const db = new D1Index(env.DB);
+  const resolved = await resolveSessionNamespaceIds(authCtx, env.DB);
+  for (const nsId of resolved) {
+    const run = await db.getRun(nsId, runId);
+    if (run) return nsId;
+  }
+  throw new OrunError("NOT_FOUND", "Run not found or access denied");
+}
+
 export async function handleUploadLog(rc: RouteContext): Promise<Response> {
-  if (rc.authCtx.type !== "oidc") throw new OrunError("FORBIDDEN", "OIDC required");
+  assertMutableAccess(rc.authCtx);
   const { runId, jobId } = rc.params;
-  const namespaceId = rc.authCtx.namespace.namespaceId;
+  const namespaceId = await resolveNamespaceForMutableAccess(rc.authCtx, rc.env, runId);
 
   const content = rc.request.body ?? "";
   const r2 = new R2Storage(rc.env.STORAGE);

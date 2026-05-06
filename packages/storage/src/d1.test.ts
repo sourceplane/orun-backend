@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { D1Index } from "./d1";
 import type { IndexedJobInput } from "./d1";
-import type { Run, Namespace } from "@orun/types";
+import type { Run, Namespace, CreateCliSessionInput } from "@orun/types";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -44,6 +44,7 @@ class FakeD1Database {
     this.tables.set("jobs", []);
     this.tables.set("accounts", []);
     this.tables.set("account_repos", []);
+    this.tables.set("cli_sessions", []);
   }
 
   prepare(sql: string): FakeD1PreparedStatement {
@@ -62,6 +63,12 @@ class FakeD1Database {
       return this.updateRun(sql, params);
     } else if (normalizedSql.startsWith("INSERT INTO JOBS")) {
       return this.upsertJob(params);
+    } else if (normalizedSql.startsWith("INSERT INTO CLI_SESSIONS")) {
+      return this.insertCliSession(params);
+    } else if (normalizedSql.startsWith("UPDATE CLI_SESSIONS SET LAST_USED_AT")) {
+      return this.updateCliSessionUsed(params);
+    } else if (normalizedSql.startsWith("UPDATE CLI_SESSIONS SET REVOKED_AT")) {
+      return this.updateCliSessionRevoked(params);
     } else if (normalizedSql.startsWith("DELETE FROM JOBS")) {
       return this.deleteExpiredJobs(params);
     } else if (normalizedSql.startsWith("DELETE FROM RUNS")) {
@@ -80,6 +87,8 @@ class FakeD1Database {
       return this.listRunsQuery(sql, params);
     } else if (normalizedSql.includes("FROM JOBS")) {
       return this.listJobsQuery(params);
+    } else if (normalizedSql.includes("FROM CLI_SESSIONS WHERE REFRESH_TOKEN_HASH")) {
+      return this.getCliSessionByHashQuery(params);
     }
     return [];
   }
@@ -220,6 +229,47 @@ class FakeD1Database {
     return jobs.filter((j) => j.namespace_id === namespaceId && j.run_id === runId);
   }
 
+  private insertCliSession(params: unknown[]): number {
+    const [sessionId, accountId, githubLogin, refreshTokenHash, allowedNamespaceIdsJson, createdAt, expiresAt, userAgent, deviceLabel] = params;
+    const sessions = this.tables.get("cli_sessions")!;
+    sessions.push({
+      session_id: sessionId,
+      account_id: accountId,
+      github_login: githubLogin,
+      refresh_token_hash: refreshTokenHash,
+      allowed_namespace_ids_json: allowedNamespaceIdsJson,
+      created_at: createdAt,
+      last_used_at: null,
+      expires_at: expiresAt,
+      revoked_at: null,
+      user_agent: userAgent ?? null,
+      device_label: deviceLabel ?? null,
+    });
+    return 1;
+  }
+
+  private updateCliSessionUsed(params: unknown[]): number {
+    const [usedAt, sessionId] = params;
+    const sessions = this.tables.get("cli_sessions")!;
+    const row = sessions.find((s) => s.session_id === sessionId);
+    if (row) row.last_used_at = usedAt;
+    return row ? 1 : 0;
+  }
+
+  private updateCliSessionRevoked(params: unknown[]): number {
+    const [revokedAt, sessionId] = params;
+    const sessions = this.tables.get("cli_sessions")!;
+    const row = sessions.find((s) => s.session_id === sessionId);
+    if (row) row.revoked_at = revokedAt;
+    return row ? 1 : 0;
+  }
+
+  private getCliSessionByHashQuery(params: unknown[]): Record<string, unknown>[] {
+    const [hash] = params as string[];
+    const sessions = this.tables.get("cli_sessions")!;
+    return sessions.filter((s) => s.refresh_token_hash === hash);
+  }
+
   getTable(name: string): Record<string, unknown>[] {
     return this.tables.get(name) ?? [];
   }
@@ -262,11 +312,14 @@ describe("D1Index", () => {
     it("migration files exist and contain valid SQL", () => {
       const migration1 = readFileSync(join(__dirname, "../../../migrations/0001_init.sql"), "utf-8");
       const migration2 = readFileSync(join(__dirname, "../../../migrations/0002_namespaces_account.sql"), "utf-8");
+      const migration3 = readFileSync(join(__dirname, "../../../migrations/0003_cli_sessions.sql"), "utf-8");
       expect(migration1).toContain("CREATE TABLE namespaces");
       expect(migration1).toContain("CREATE TABLE runs");
       expect(migration1).toContain("CREATE TABLE jobs");
       expect(migration2).toContain("CREATE TABLE accounts");
       expect(migration2).toContain("CREATE TABLE account_repos");
+      expect(migration3).toContain("CREATE TABLE cli_sessions");
+      expect(migration3).toContain("refresh_token_hash");
     });
   });
 
@@ -555,6 +608,99 @@ describe("D1Index", () => {
           op.sql.includes("namespace_id") || op.params.includes("ns-1");
         expect(hasNamespaceFilter).toBe(true);
       }
+    });
+  });
+
+  describe("createCliSession", () => {
+    it("inserts a cli session row and returns the session object", async () => {
+      const input: CreateCliSessionInput = {
+        sessionId: "sess-1",
+        accountId: "acct-1",
+        githubLogin: "alice",
+        refreshTokenHash: "hash-abc",
+        allowedNamespaceIds: ["ns-1", "ns-2"],
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        userAgent: "orun-cli/1.0",
+      };
+      const session = await d1.createCliSession(input);
+      expect(session.sessionId).toBe("sess-1");
+      expect(session.githubLogin).toBe("alice");
+      expect(session.allowedNamespaceIds).toEqual(["ns-1", "ns-2"]);
+      expect(session.revokedAt).toBeNull();
+      expect(session.lastUsedAt).toBeNull();
+      const rows = db.getTable("cli_sessions");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].refresh_token_hash).toBe("hash-abc");
+      expect(rows[0].allowed_namespace_ids_json).toBe(JSON.stringify(["ns-1", "ns-2"]));
+    });
+  });
+
+  describe("getCliSessionByRefreshHash", () => {
+    it("returns session by hash", async () => {
+      await d1.createCliSession({
+        sessionId: "sess-1",
+        accountId: "acct-1",
+        githubLogin: "bob",
+        refreshTokenHash: "hash-xyz",
+        allowedNamespaceIds: ["ns-5"],
+        expiresAt: "2026-06-01T00:00:00.000Z",
+      });
+      const result = await d1.getCliSessionByRefreshHash("hash-xyz");
+      expect(result).not.toBeNull();
+      expect(result!.sessionId).toBe("sess-1");
+      expect(result!.githubLogin).toBe("bob");
+      expect(result!.allowedNamespaceIds).toEqual(["ns-5"]);
+    });
+
+    it("returns null for unknown hash", async () => {
+      const result = await d1.getCliSessionByRefreshHash("nonexistent-hash");
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("markCliSessionUsed", () => {
+    it("sets last_used_at on the session", async () => {
+      await d1.createCliSession({
+        sessionId: "sess-used",
+        accountId: "acct-1",
+        githubLogin: "carol",
+        refreshTokenHash: "hash-carol",
+        allowedNamespaceIds: [],
+        expiresAt: "2026-01-01T00:00:00.000Z",
+      });
+      await d1.markCliSessionUsed("sess-used", "2025-06-01T12:00:00.000Z");
+      const rows = db.getTable("cli_sessions");
+      expect(rows[0].last_used_at).toBe("2025-06-01T12:00:00.000Z");
+    });
+  });
+
+  describe("revokeCliSession", () => {
+    it("sets revoked_at on the session", async () => {
+      await d1.createCliSession({
+        sessionId: "sess-revoke",
+        accountId: "acct-1",
+        githubLogin: "dave",
+        refreshTokenHash: "hash-dave",
+        allowedNamespaceIds: [],
+        expiresAt: "2026-01-01T00:00:00.000Z",
+      });
+      await d1.revokeCliSession("sess-revoke", "2025-05-10T09:00:00.000Z");
+      const rows = db.getTable("cli_sessions");
+      expect(rows[0].revoked_at).toBe("2025-05-10T09:00:00.000Z");
+    });
+
+    it("getCliSessionByRefreshHash reflects revoked_at after revocation", async () => {
+      await d1.createCliSession({
+        sessionId: "sess-chk",
+        accountId: "acct-1",
+        githubLogin: "eve",
+        refreshTokenHash: "hash-eve",
+        allowedNamespaceIds: ["ns-99"],
+        expiresAt: "2026-01-01T00:00:00.000Z",
+      });
+      await d1.revokeCliSession("sess-chk", "2025-05-10T09:00:00.000Z");
+      const result = await d1.getCliSessionByRefreshHash("hash-eve");
+      expect(result!.revokedAt).toBe("2025-05-10T09:00:00.000Z");
     });
   });
 });

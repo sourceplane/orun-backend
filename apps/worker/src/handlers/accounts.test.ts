@@ -244,6 +244,7 @@ vi.mock("../auth", async (importOriginal) => {
   const original = await importOriginal() as Record<string, unknown>;
   let mockAuthResult: RequestContext = {
     type: "session",
+    sessionKind: "dashboard",
     namespace: null,
     allowedNamespaceIds: ["123456"],
     actor: "testuser",
@@ -288,6 +289,7 @@ describe("Account & Repo Linking", () => {
     ctx = makeExecutionContext();
     __setMockAuth({
       type: "session",
+      sessionKind: "dashboard",
       namespace: null,
       allowedNamespaceIds: ["123456"],
       actor: "testuser",
@@ -653,6 +655,7 @@ describe("resolveSessionNamespaceIds", () => {
 
     const authCtx: RequestContext = {
       type: "session",
+      sessionKind: "dashboard",
       namespace: null,
       allowedNamespaceIds: ["jwt-ns"],
       actor: "testuser",
@@ -673,6 +676,7 @@ describe("resolveSessionNamespaceIds", () => {
 
     const authCtx: RequestContext = {
       type: "session",
+      sessionKind: "dashboard",
       namespace: null,
       allowedNamespaceIds: ["shared-ns"],
       actor: "testuser",
@@ -688,6 +692,7 @@ describe("resolveSessionNamespaceIds", () => {
 
     const authCtx: RequestContext = {
       type: "session",
+      sessionKind: "dashboard",
       namespace: null,
       allowedNamespaceIds: ["ns-1", "ns-2"],
       actor: "noone",
@@ -710,6 +715,7 @@ describe("Session reads with linked namespaces", () => {
 
     __setMockAuth({
       type: "session",
+      sessionKind: "dashboard",
       namespace: null,
       allowedNamespaceIds: ["jwt-ns"],
       actor: "testuser",

@@ -13,6 +13,7 @@ export type RequestContext =
     }
   | {
       type: "session";
+      sessionKind: "dashboard" | "cli";
       namespace: null;
       allowedNamespaceIds: string[];
       actor: string;
@@ -72,6 +73,7 @@ export async function authenticate(
   const claims = await verifySessionToken(token, env.ORUN_SESSION_SECRET);
   return {
     type: "session",
+    sessionKind: claims.sessionKind === "cli" ? "cli" : "dashboard",
     namespace: null,
     allowedNamespaceIds: claims.allowedNamespaceIds,
     actor: claims.sub,
@@ -81,5 +83,5 @@ export async function authenticate(
 export { OrunError } from "./errors";
 export { verifyOIDCToken, extractNamespaceFromOIDC, looksLikeOIDC } from "./oidc";
 export { issueSessionToken, verifySessionToken } from "./session";
-export { buildGitHubOAuthRedirect, handleGitHubOAuthCallback, type OAuthCallbackResult } from "./github-oauth";
+export { buildGitHubOAuthRedirect, handleGitHubOAuthCallback, hashRefreshToken, generateRefreshToken, type OAuthCallbackResult } from "./github-oauth";
 export { upsertNamespaceSlug } from "./namespace";

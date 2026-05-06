@@ -1,4 +1,4 @@
-import type { Run, Job, Namespace, RunStatus, JobStatus } from "@orun/types";
+import type { Run, Job, Namespace, RunStatus, JobStatus, CliSession, CreateCliSessionInput } from "@orun/types";
 
 export type IndexedJobInput = Pick<
   Job,
@@ -190,6 +190,65 @@ export class D1Index {
 
     return result.meta?.changes ?? 0;
   }
+
+  async createCliSession(input: CreateCliSessionInput): Promise<CliSession> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `INSERT INTO cli_sessions (session_id, account_id, github_login, refresh_token_hash, allowed_namespace_ids_json, created_at, expires_at, user_agent, device_label)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      )
+      .bind(
+        input.sessionId,
+        input.accountId,
+        input.githubLogin,
+        input.refreshTokenHash,
+        JSON.stringify(input.allowedNamespaceIds),
+        now,
+        input.expiresAt,
+        input.userAgent ?? null,
+        input.deviceLabel ?? null,
+      )
+      .run();
+    return {
+      sessionId: input.sessionId,
+      accountId: input.accountId,
+      githubLogin: input.githubLogin,
+      allowedNamespaceIds: input.allowedNamespaceIds,
+      createdAt: now,
+      lastUsedAt: null,
+      expiresAt: input.expiresAt,
+      revokedAt: null,
+      userAgent: input.userAgent ?? null,
+      deviceLabel: input.deviceLabel ?? null,
+    };
+  }
+
+  async getCliSessionByRefreshHash(refreshTokenHash: string): Promise<CliSession | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT session_id, account_id, github_login, allowed_namespace_ids_json, created_at, last_used_at, expires_at, revoked_at, user_agent, device_label
+         FROM cli_sessions WHERE refresh_token_hash = ?1`,
+      )
+      .bind(refreshTokenHash)
+      .first<Record<string, unknown>>();
+    if (!row) return null;
+    return rowToCliSession(row);
+  }
+
+  async markCliSessionUsed(sessionId: string, usedAt: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE cli_sessions SET last_used_at = ?1 WHERE session_id = ?2`)
+      .bind(usedAt, sessionId)
+      .run();
+  }
+
+  async revokeCliSession(sessionId: string, revokedAt: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE cli_sessions SET revoked_at = ?1 WHERE session_id = ?2`)
+      .bind(revokedAt, sessionId)
+      .run();
+  }
 }
 
 function rowToRun(row: Record<string, unknown>): Run {
@@ -227,5 +286,20 @@ function rowToJob(row: Record<string, unknown>): Job {
     lastError: null,
     heartbeatAt: null,
     logRef: (row.log_ref as string) ?? null,
+  };
+}
+
+function rowToCliSession(row: Record<string, unknown>): CliSession {
+  return {
+    sessionId: row.session_id as string,
+    accountId: row.account_id as string,
+    githubLogin: row.github_login as string,
+    allowedNamespaceIds: JSON.parse(row.allowed_namespace_ids_json as string) as string[],
+    createdAt: row.created_at as string,
+    lastUsedAt: (row.last_used_at as string) ?? null,
+    expiresAt: row.expires_at as string,
+    revokedAt: (row.revoked_at as string) ?? null,
+    userAgent: (row.user_agent as string) ?? null,
+    deviceLabel: (row.device_label as string) ?? null,
   };
 }

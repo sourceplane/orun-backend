@@ -181,6 +181,7 @@ vi.mock("./auth", async (importOriginal) => {
     buildGitHubOAuthRedirect: vi.fn(async () => Response.redirect("https://github.com/login/oauth/authorize?test=1", 302)),
     handleGitHubOAuthCallback: vi.fn(async () => ({
       sessionToken: "session-jwt-token",
+      sessionKind: "dashboard" as const,
       githubLogin: "testuser",
       allowedNamespaceIds: ["123456", "789"],
     })),
@@ -400,6 +401,7 @@ describe("Worker API", () => {
     it("session cannot read runs outside allowedNamespaceIds", async () => {
       __setMockAuth({
         type: "session",
+        sessionKind: "dashboard",
         namespace: null,
         allowedNamespaceIds: ["different-ns"],
         actor: "user",
@@ -413,6 +415,7 @@ describe("Worker API", () => {
     it("session auth lists runs", async () => {
       __setMockAuth({
         type: "session",
+        sessionKind: "dashboard",
         namespace: null,
         allowedNamespaceIds: ["123456"],
         actor: "user",
@@ -702,7 +705,7 @@ describe("RateLimitCounter DO", () => {
     expect(resp.status).toBe(200);
     const data = await resp.json() as { limited: boolean; remaining: number };
     expect(data.limited).toBe(false);
-    expect(data.remaining).toBe(99);
+    expect(data.remaining).toBe(299);
   });
 
   it("returns limited when tokens exhausted", async () => {
@@ -710,7 +713,7 @@ describe("RateLimitCounter DO", () => {
     const state = { storage: {} } as unknown as DurableObjectState;
     const counter = new RateLimitCounter(state, {});
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 300; i++) {
       await counter.fetch(new Request("https://local/check"));
     }
 

@@ -4,7 +4,6 @@ import type { RunState, CoordinatorUpdateJobRequest } from "@orun/coordinator";
 import { OrunError } from "../auth/errors";
 import { json } from "../http";
 import { getCoordinator, coordinatorFetch } from "../coordinator";
-import { assertNamespaceAccess } from "./runs";
 import { resolveSessionNamespaceIds } from "./accounts";
 import { D1Index } from "@orun/storage";
 
@@ -16,10 +15,34 @@ interface RouteContext {
   authCtx: RequestContext;
 }
 
+function assertMutableAccess(authCtx: RequestContext): void {
+  if (authCtx.type === "oidc") return;
+  if (authCtx.type === "session" && authCtx.sessionKind === "cli") return;
+  throw new OrunError("FORBIDDEN", "Dashboard sessions may not use mutable coordination routes");
+}
+
+async function resolveNamespaceForMutableAccess(
+  authCtx: RequestContext,
+  env: Env,
+  runId: string,
+): Promise<string> {
+  if (authCtx.type === "oidc") {
+    return authCtx.namespace.namespaceId;
+  }
+  const db = new D1Index(env.DB);
+  const resolved = await resolveSessionNamespaceIds(authCtx, env.DB);
+  for (const nsId of resolved) {
+    const run = await db.getRun(nsId, runId);
+    if (run) {
+      return nsId;
+    }
+  }
+  throw new OrunError("NOT_FOUND", "Run not found or access denied");
+}
+
 export async function handleClaimJob(rc: RouteContext): Promise<Response> {
-  if (rc.authCtx.type !== "oidc") throw new OrunError("FORBIDDEN", "OIDC required");
+  assertMutableAccess(rc.authCtx);
   const { runId, jobId } = rc.params;
-  const namespaceId = rc.authCtx.namespace.namespaceId;
 
   let body: Record<string, unknown>;
   try {
@@ -33,6 +56,8 @@ export async function handleClaimJob(rc: RouteContext): Promise<Response> {
     throw new OrunError("INVALID_REQUEST", "Missing runnerId");
   }
 
+  const namespaceId = await resolveNamespaceForMutableAccess(rc.authCtx, rc.env, runId);
+
   const stub = getCoordinator(rc.env, namespaceId, runId);
   const resp = await coordinatorFetch(stub, `/jobs/${encodeURIComponent(jobId)}/claim`, {
     method: "POST",
@@ -45,9 +70,8 @@ export async function handleClaimJob(rc: RouteContext): Promise<Response> {
 }
 
 export async function handleUpdateJob(rc: RouteContext): Promise<Response> {
-  if (rc.authCtx.type !== "oidc") throw new OrunError("FORBIDDEN", "OIDC required");
+  assertMutableAccess(rc.authCtx);
   const { runId, jobId } = rc.params;
-  const namespaceId = rc.authCtx.namespace.namespaceId;
 
   let body: Record<string, unknown>;
   try {
@@ -64,6 +88,9 @@ export async function handleUpdateJob(rc: RouteContext): Promise<Response> {
   if (status !== "success" && status !== "failed") {
     throw new OrunError("INVALID_REQUEST", "status must be 'success' or 'failed'");
   }
+
+  const db = new D1Index(rc.env.DB);
+  const namespaceId = await resolveNamespaceForMutableAccess(rc.authCtx, rc.env, runId);
 
   const updateBody: CoordinatorUpdateJobRequest = { runnerId, status, error: body.error as string | undefined };
 
@@ -84,7 +111,6 @@ export async function handleUpdateJob(rc: RouteContext): Promise<Response> {
     if (!stateResp.ok) return;
     const state = await stateResp.json() as RunState;
 
-    const db = new D1Index(rc.env.DB);
     const jobs = Object.values(state.jobs);
     const jobDone = jobs.filter((j) => j.status === "success").length;
     const jobFailed = jobs.filter((j) => j.status === "failed").length;
@@ -122,9 +148,8 @@ export async function handleUpdateJob(rc: RouteContext): Promise<Response> {
 }
 
 export async function handleHeartbeat(rc: RouteContext): Promise<Response> {
-  if (rc.authCtx.type !== "oidc") throw new OrunError("FORBIDDEN", "OIDC required");
+  assertMutableAccess(rc.authCtx);
   const { runId, jobId } = rc.params;
-  const namespaceId = rc.authCtx.namespace.namespaceId;
 
   let body: Record<string, unknown>;
   try {
@@ -138,6 +163,8 @@ export async function handleHeartbeat(rc: RouteContext): Promise<Response> {
     throw new OrunError("INVALID_REQUEST", "Missing runnerId");
   }
 
+  const namespaceId = await resolveNamespaceForMutableAccess(rc.authCtx, rc.env, runId);
+
   const stub = getCoordinator(rc.env, namespaceId, runId);
   const resp = await coordinatorFetch(stub, `/jobs/${encodeURIComponent(jobId)}/heartbeat`, {
     method: "POST",
@@ -150,9 +177,10 @@ export async function handleHeartbeat(rc: RouteContext): Promise<Response> {
 }
 
 export async function handleRunnable(rc: RouteContext): Promise<Response> {
-  if (rc.authCtx.type !== "oidc") throw new OrunError("FORBIDDEN", "OIDC required");
+  assertMutableAccess(rc.authCtx);
   const { runId } = rc.params;
-  const namespaceId = rc.authCtx.namespace.namespaceId;
+
+  const namespaceId = await resolveNamespaceForMutableAccess(rc.authCtx, rc.env, runId);
 
   const stub = getCoordinator(rc.env, namespaceId, runId);
   const resp = await coordinatorFetch(stub, "/runnable");

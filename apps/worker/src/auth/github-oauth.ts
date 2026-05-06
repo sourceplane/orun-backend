@@ -25,14 +25,18 @@ interface StatePayload {
   nonce: string;
   exp: number;
   returnTo?: string;
+  client?: "cli";
 }
 
-async function buildSignedState(secret: string, returnTo?: string): Promise<string> {
+async function buildSignedState(secret: string, returnTo?: string, client?: "cli"): Promise<string> {
   const nonce = base64urlEncode(crypto.getRandomValues(new Uint8Array(16)));
   const exp = Math.floor(Date.now() / 1000) + OAUTH_STATE_TTL_SECONDS;
   const payload: StatePayload = { nonce, exp };
   if (returnTo) {
     payload.returnTo = returnTo;
+  }
+  if (client) {
+    payload.client = client;
   }
   const data = base64urlEncodeString(JSON.stringify(payload));
   const sig = await signHmac(data, secret);
@@ -79,7 +83,14 @@ function buildCallbackUrl(request: Request, env: Env): string {
   return `${url.origin}/v1/auth/github/callback`;
 }
 
-function validateReturnTo(returnTo: string, env: Env, request: Request): string {
+function isLoopbackUrl(url: URL): boolean {
+  return (
+    url.protocol === "http:" &&
+    (url.hostname === "127.0.0.1" || url.hostname === "localhost")
+  );
+}
+
+function validateReturnTo(returnTo: string, env: Env, request: Request, client?: "cli"): string {
   let parsed: URL;
   try {
     parsed = new URL(returnTo);
@@ -89,6 +100,14 @@ function validateReturnTo(returnTo: string, env: Env, request: Request): string 
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new OrunError("INVALID_REQUEST", "Invalid returnTo URL");
   }
+
+  if (client === "cli") {
+    if (!isLoopbackUrl(parsed)) {
+      throw new OrunError("INVALID_REQUEST", "CLI returnTo must be a loopback URL (127.0.0.1 or localhost)");
+    }
+    return returnTo;
+  }
+
   if (env.ORUN_DASHBOARD_URL) {
     const dashboardOrigin = new URL(env.ORUN_DASHBOARD_URL).origin;
     if (parsed.origin !== dashboardOrigin) {
@@ -112,12 +131,15 @@ export async function buildGitHubOAuthRedirect(
 
   const url = new URL(request.url);
   const returnToParam = url.searchParams.get("returnTo");
+  const clientParam = url.searchParams.get("client");
+  const client = clientParam === "cli" ? "cli" as const : undefined;
+
   let returnTo: string | undefined;
   if (returnToParam) {
-    returnTo = validateReturnTo(returnToParam, env, request);
+    returnTo = validateReturnTo(returnToParam, env, request, client);
   }
 
-  const state = await buildSignedState(sessionSecret, returnTo);
+  const state = await buildSignedState(sessionSecret, returnTo, client);
   const redirectUri = buildCallbackUrl(request, env);
 
   const params = new URLSearchParams({
@@ -254,9 +276,25 @@ async function fetchOrgAdminRepoIds(accessToken: string): Promise<string[]> {
 
 export interface OAuthCallbackResult {
   sessionToken: string;
+  sessionKind: "dashboard" | "cli";
   githubLogin: string;
   allowedNamespaceIds: string[];
   returnTo?: string;
+  refreshToken?: string;
+  refreshExpiresAt?: string;
+  _refreshTokenHash?: string;
+}
+
+export async function generateRefreshToken(): Promise<{ raw: string; hash: string }> {
+  const raw = base64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
+  const hashBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+  const hash = base64urlEncode(new Uint8Array(hashBytes));
+  return { raw, hash };
+}
+
+export async function hashRefreshToken(raw: string): Promise<string> {
+  const hashBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+  return base64urlEncode(new Uint8Array(hashBytes));
 }
 
 export async function handleGitHubOAuthCallback(
@@ -277,6 +315,7 @@ export async function handleGitHubOAuthCallback(
   }
 
   const statePayload = await verifySignedState(state, sessionSecret);
+  const isCli = statePayload.client === "cli";
 
   const redirectUri = buildCallbackUrl(request, env);
   const accessToken = await exchangeCodeForToken(code, env, redirectUri);
@@ -288,11 +327,28 @@ export async function handleGitHubOAuthCallback(
   ]);
 
   const allowedNamespaceIds = [...new Set([...repoIds, ...orgRepoIds])];
+  const sessionKind: "dashboard" | "cli" = isCli ? "cli" : "dashboard";
 
   const sessionToken = await issueSessionToken(
-    { sub: user.login, allowedNamespaceIds },
+    { sub: user.login, allowedNamespaceIds, sessionKind, tokenUse: "access" },
     sessionSecret,
   );
 
-  return { sessionToken, githubLogin: user.login, allowedNamespaceIds, returnTo: statePayload.returnTo };
+  const result: OAuthCallbackResult = {
+    sessionToken,
+    sessionKind,
+    githubLogin: user.login,
+    allowedNamespaceIds,
+    returnTo: statePayload.returnTo,
+  };
+
+  if (isCli) {
+    const { raw, hash } = await generateRefreshToken();
+    const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    result.refreshToken = raw;
+    result.refreshExpiresAt = refreshExpiresAt;
+    result._refreshTokenHash = hash;
+  }
+
+  return result;
 }
