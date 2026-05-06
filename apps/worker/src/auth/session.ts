@@ -64,6 +64,8 @@ export async function verifySessionToken(
   return {
     sub: payload.sub as string,
     allowedNamespaceIds: payload.allowedNamespaceIds as string[],
+    sessionKind: (payload.sessionKind as "dashboard" | "cli" | undefined) ?? undefined,
+    tokenUse: (payload.tokenUse as "access" | undefined) ?? undefined,
     exp: payload.exp as number,
     iat: payload.iat as number,
   };

@@ -2,7 +2,7 @@ import type { Env } from "@orun/types";
 import { handleOptions, errorJson, handleError, json } from "./http";
 import { authenticate, type RequestContext } from "./auth";
 import { OrunError } from "./auth/errors";
-import { handleAuthGitHub, handleAuthGitHubCallback } from "./handlers/auth";
+import { handleAuthGitHub, handleAuthGitHubCallback, handleCliDeviceStart, handleCliDevicePoll, handleCliToken, handleCliLogout } from "./handlers/auth";
 import { handleCreateRun, handleListRuns, handleGetRun } from "./handlers/runs";
 import { handleClaimJob, handleUpdateJob, handleHeartbeat, handleRunnable, handleListJobs, handleJobStatus } from "./handlers/jobs";
 import { handleUploadLog, handleGetLog } from "./handlers/logs";
@@ -40,6 +40,10 @@ function route(method: string, path: string, handler: Handler, auth: Route["auth
 const routes: Route[] = [
   route("GET", "/v1/auth/github", handleAuthGitHub, "none", false),
   route("GET", "/v1/auth/github/callback", handleAuthGitHubCallback, "none", false),
+  route("POST", "/v1/auth/cli/device/start", handleCliDeviceStart, "none", false),
+  route("POST", "/v1/auth/cli/device/poll", handleCliDevicePoll, "none", false),
+  route("POST", "/v1/auth/cli/token", handleCliToken, "none", false),
+  route("POST", "/v1/auth/cli/logout", handleCliLogout, "none", false),
   route("POST", "/v1/accounts", handleCreateAccount, "session", true),
   route("GET", "/v1/accounts/me", handleGetAccount, "session", true),
   route("POST", "/v1/accounts/repos", handleLinkRepo, "session", true),
@@ -50,11 +54,11 @@ const routes: Route[] = [
   route("GET", "/v1/runs/:runId", handleGetRun, "oidc_or_session", true),
   route("GET", "/v1/runs/:runId/jobs", handleListJobs, "oidc_or_session", true),
   route("GET", "/v1/runs/:runId/jobs/:jobId/status", handleJobStatus, "oidc_or_session", true),
-  route("GET", "/v1/runs/:runId/runnable", handleRunnable, "oidc", true),
-  route("POST", "/v1/runs/:runId/jobs/:jobId/claim", handleClaimJob, "oidc", true),
-  route("POST", "/v1/runs/:runId/jobs/:jobId/update", handleUpdateJob, "oidc", true),
-  route("POST", "/v1/runs/:runId/jobs/:jobId/heartbeat", handleHeartbeat, "oidc", true),
-  route("POST", "/v1/runs/:runId/logs/:jobId", handleUploadLog, "oidc", true),
+  route("GET", "/v1/runs/:runId/runnable", handleRunnable, "oidc_or_session", true),
+  route("POST", "/v1/runs/:runId/jobs/:jobId/claim", handleClaimJob, "oidc_or_session", true),
+  route("POST", "/v1/runs/:runId/jobs/:jobId/update", handleUpdateJob, "oidc_or_session", true),
+  route("POST", "/v1/runs/:runId/jobs/:jobId/heartbeat", handleHeartbeat, "oidc_or_session", true),
+  route("POST", "/v1/runs/:runId/logs/:jobId", handleUploadLog, "oidc_or_session", true),
   route("GET", "/v1/runs/:runId/logs/:jobId", handleGetLog, "oidc_or_session", true),
 ];
 

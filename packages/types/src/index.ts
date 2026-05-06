@@ -131,8 +131,34 @@ export interface OIDCClaims {
 export interface SessionClaims {
   sub: string;
   allowedNamespaceIds: string[];
+  sessionKind?: "dashboard" | "cli";
+  tokenUse?: "access";
   exp: number;
   iat: number;
+}
+
+export interface CliSession {
+  sessionId: string;
+  accountId: string;
+  githubLogin: string;
+  allowedNamespaceIds: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  revokedAt: string | null;
+  userAgent: string | null;
+  deviceLabel: string | null;
+}
+
+export interface CreateCliSessionInput {
+  sessionId: string;
+  accountId: string;
+  githubLogin: string;
+  refreshTokenHash: string;
+  allowedNamespaceIds: string[];
+  expiresAt: string;
+  userAgent?: string;
+  deviceLabel?: string;
 }
 
 // ─── Error Types ─────────────────────────────────────────────────────────────
@@ -166,4 +192,5 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   ORUN_PUBLIC_URL?: string;
   ORUN_DASHBOARD_URL?: string;
+  GITHUB_DEVICE_CLIENT_ID?: string;
 }
