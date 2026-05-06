@@ -1,7 +1,7 @@
 import type { Plan, JobStatus } from "@orun/types";
 
 const HEARTBEAT_TIMEOUT_MS = 300_000;
-const EXPIRY_DELAY_MS = 24 * 60 * 60 * 1000;
+const SWEEP_INTERVAL_MS = HEARTBEAT_TIMEOUT_MS;
 
 export interface RunState {
   runId: string;
@@ -71,16 +71,62 @@ export class RunCoordinator {
     }
   }
 
-  private async scheduleExpiry(): Promise<void> {
-    const alarm = await this.state.storage.getAlarm();
-    if (!alarm) {
-      await this.state.storage.setAlarm(Date.now() + EXPIRY_DELAY_MS);
-    }
+  private async scheduleSweep(): Promise<void> {
+    await this.state.storage.setAlarm(Date.now() + SWEEP_INTERVAL_MS);
   }
 
   async alarm(): Promise<void> {
-    await this.state.storage.deleteAll();
-    this.runState = null;
+    const state = await this.loadState();
+    if (!state) {
+      await this.state.storage.deleteAll();
+      return;
+    }
+
+    // Sweep: mark "running" jobs with an expired heartbeat as "failed".
+    const now = Date.now();
+    let swept = false;
+    for (const job of Object.values(state.jobs)) {
+      if (job.status !== "running") continue;
+      const heartbeatAge = job.heartbeatAt
+        ? now - new Date(job.heartbeatAt).getTime()
+        : Infinity;
+      if (heartbeatAge > HEARTBEAT_TIMEOUT_MS) {
+        job.status = "failed";
+        job.lastError = "runner heartbeat timeout";
+        if (!job.finishedAt) {
+          job.finishedAt = new Date().toISOString();
+        }
+        swept = true;
+      }
+    }
+
+    if (swept) {
+      const allJobs = Object.values(state.jobs);
+      const allSuccess = allJobs.every((j) => j.status === "success");
+      const anyFailed = allJobs.some((j) => j.status === "failed");
+      if (allSuccess) {
+        state.status = "completed";
+      } else if (anyFailed) {
+        state.status = "failed";
+      }
+      state.updatedAt = new Date().toISOString();
+      await this.persistState();
+    }
+
+    // If the run is still active, reschedule the sweep; otherwise delete state (expiry).
+    const isActive =
+      state.status === "running" ||
+      Object.values(state.jobs).some(
+        (j) => j.status === "pending" || j.status === "running",
+      );
+
+    if (isActive) {
+      await this.scheduleSweep();
+    } else {
+      // Run is terminal — delete all persisted state.
+      await this.state.storage.deleteAll();
+      this.runState = null;
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -230,6 +276,7 @@ export class RunCoordinator {
     };
 
     await this.persistState();
+    await this.scheduleSweep();
     return jsonResponse({ ok: true, alreadyExists: false });
   }
 
@@ -260,6 +307,35 @@ export class RunCoordinator {
     }
 
     if (job.status === "pending") {
+      // Sweep any "running" dep whose heartbeat has expired — mirror of the
+      // alarm sweep so the claim path never returns depsWaiting for a dead dep.
+      const nowMs = Date.now();
+      let swept = false;
+      for (const dep of job.deps) {
+        const depJob = state.jobs[dep];
+        if (depJob.status === "running") {
+          const heartbeatAge = depJob.heartbeatAt
+            ? nowMs - new Date(depJob.heartbeatAt).getTime()
+            : Infinity;
+          if (heartbeatAge > HEARTBEAT_TIMEOUT_MS) {
+            depJob.status = "failed";
+            depJob.lastError = "runner heartbeat timeout";
+            if (!depJob.finishedAt) {
+              depJob.finishedAt = new Date().toISOString();
+            }
+            swept = true;
+          }
+        }
+      }
+      if (swept) {
+        const allJobs = Object.values(state.jobs);
+        if (allJobs.some((j) => j.status === "failed")) {
+          state.status = "failed";
+        }
+        state.updatedAt = new Date().toISOString();
+        await this.persistState();
+      }
+
       for (const dep of job.deps) {
         const depJob = state.jobs[dep];
         if (depJob.status === "failed") {
@@ -391,10 +467,6 @@ export class RunCoordinator {
 
     await this.persistState();
 
-    if (state.status === "completed" || state.status === "failed") {
-      await this.scheduleExpiry();
-    }
-
     return jsonResponse({ ok: true });
   }
 
@@ -508,7 +580,6 @@ export class RunCoordinator {
     state.status = "cancelled";
     state.updatedAt = now;
     await this.persistState();
-    await this.scheduleExpiry();
 
     return jsonResponse({ ok: true });
   }

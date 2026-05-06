@@ -249,6 +249,42 @@ describe("RunCoordinator", () => {
       expect(body.depsBlocked).toBe(true);
     });
 
+    it("sweeps dep with expired heartbeat and returns depsBlocked on claim", async () => {
+      vi.useFakeTimers();
+      const { coordinator } = createCoordinator();
+      await initCoordinator(coordinator);
+
+      // Claim job a so it becomes "running"
+      await coordinator.fetch(req("POST", "/jobs/a/claim", { runnerId: "r1" }));
+
+      // Advance time beyond HEARTBEAT_TIMEOUT_MS (300s) without sending heartbeats
+      vi.advanceTimersByTime(301_000);
+
+      // Job b depends on job a. Claiming b should detect the stale heartbeat,
+      // mark a as "failed", and return depsBlocked — not depsWaiting.
+      const res = await coordinator.fetch(
+        req("POST", "/jobs/b/claim", { runnerId: "r2" }),
+      );
+      const body = (await json(res)) as {
+        claimed: boolean;
+        depsBlocked?: boolean;
+        depsWaiting?: boolean;
+      };
+      expect(body.claimed).toBe(false);
+      expect(body.depsBlocked).toBe(true);
+      expect(body.depsWaiting).toBeUndefined();
+
+      // Job a should now be marked "failed" with the heartbeat timeout error
+      const stateRes = await coordinator.fetch(req("GET", "/state"));
+      const state = (await stateRes.json()) as {
+        jobs: Record<string, { status: string; lastError: string }>;
+      };
+      expect(state.jobs.a.status).toBe("failed");
+      expect(state.jobs.a.lastError).toBe("runner heartbeat timeout");
+
+      vi.useRealTimers();
+    });
+
     it("is rejected when another runner has a fresh heartbeat", async () => {
       const { coordinator } = createCoordinator();
       await initCoordinator(coordinator);
@@ -601,14 +637,55 @@ describe("RunCoordinator", () => {
   });
 
   describe("alarm()", () => {
-    it("deletes storage and clears in-memory state", async () => {
+    it("reschedules sweep when run is still active (pending jobs)", async () => {
       const { coordinator, storage } = createCoordinator();
       await initCoordinator(coordinator);
 
       await coordinator.alarm();
 
-      expect(storage.getDataSync().size).toBe(0);
+      // State must still exist (run is active with pending jobs)
+      expect(storage.getDataSync().size).toBeGreaterThan(0);
+      // Alarm must be rescheduled for next sweep
+      expect(storage.getAlarmSync()).not.toBeNull();
+      const stateRes = await coordinator.fetch(req("GET", "/state"));
+      expect(stateRes.status).toBe(200);
+    });
 
+    it("marks running jobs with expired heartbeat as failed and reschedules", async () => {
+      vi.useFakeTimers();
+      const { coordinator, storage } = createCoordinator();
+      await initCoordinator(coordinator);
+
+      // Claim job a so it becomes "running"
+      await coordinator.fetch(req("POST", "/jobs/a/claim", { runnerId: "r1" }));
+
+      // Advance time beyond HEARTBEAT_TIMEOUT_MS (300s)
+      vi.advanceTimersByTime(301_000);
+
+      await coordinator.alarm();
+
+      const stateRes = await coordinator.fetch(req("GET", "/state"));
+      const state = await stateRes.json() as { jobs: Record<string, { status: string; lastError: string }> };
+      expect(state.jobs.a.status).toBe("failed");
+      expect(state.jobs.a.lastError).toBe("runner heartbeat timeout");
+      // Run is still active (job b is pending) — alarm should be rescheduled
+      expect(storage.getAlarmSync()).not.toBeNull();
+      vi.useRealTimers();
+    });
+
+    it("deletes storage when run is terminal", async () => {
+      const { coordinator, storage } = createCoordinator();
+      await initCoordinator(coordinator);
+
+      // Drive both jobs to success
+      await coordinator.fetch(req("POST", "/jobs/a/claim", { runnerId: "r1" }));
+      await coordinator.fetch(req("POST", "/jobs/a/update", { runnerId: "r1", status: "success" }));
+      await coordinator.fetch(req("POST", "/jobs/b/claim", { runnerId: "r1" }));
+      await coordinator.fetch(req("POST", "/jobs/b/update", { runnerId: "r1", status: "success" }));
+
+      await coordinator.alarm();
+
+      expect(storage.getDataSync().size).toBe(0);
       const stateRes = await coordinator.fetch(req("GET", "/state"));
       expect(stateRes.status).toBe(404);
     });
