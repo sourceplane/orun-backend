@@ -169,6 +169,39 @@ CREATE TABLE account_repos (
 CREATE INDEX idx_account_repos_namespace ON account_repos(namespace_id);
 ```
 
+#### `migrations/0003_cli_sessions.sql`
+
+CLI human login uses Orun-issued refresh tokens so local `orun run --remote-state` can reuse the same backend coordination path as GitHub Actions without storing GitHub PATs or GitHub OAuth access tokens.
+
+```sql
+CREATE TABLE cli_sessions (
+  session_id                 TEXT PRIMARY KEY,
+  account_id                 TEXT NOT NULL,
+  github_login               TEXT NOT NULL,
+  refresh_token_hash         TEXT NOT NULL UNIQUE,
+  allowed_namespace_ids_json TEXT NOT NULL,
+  created_at                 TEXT NOT NULL,
+  last_used_at               TEXT,
+  expires_at                 TEXT NOT NULL,
+  revoked_at                 TEXT,
+  user_agent                 TEXT,
+  device_label               TEXT,
+  FOREIGN KEY (account_id) REFERENCES accounts(account_id)
+);
+
+CREATE INDEX idx_cli_sessions_account ON cli_sessions(account_id);
+CREATE INDEX idx_cli_sessions_expires ON cli_sessions(expires_at);
+CREATE INDEX idx_cli_sessions_hash ON cli_sessions(refresh_token_hash);
+```
+
+Requirements:
+
+- Store only a cryptographic hash of the refresh token. The raw token is shown once to the CLI.
+- `allowed_namespace_ids_json` is a snapshot used to mint short-lived Orun session JWTs without storing GitHub tokens.
+- `revoked_at` is set by `orun auth logout`.
+- Expired or revoked refresh tokens must not mint access tokens.
+- A scheduled GC may delete expired CLI sessions after an audit retention window.
+
 ### D1Index Interface
 
 ```typescript
@@ -202,6 +235,12 @@ export class D1Index {
 
   /** Delete all rows for expired runs (GC). */
   async deleteExpiredRuns(): Promise<number>;
+
+  /** Create, refresh, and revoke local CLI sessions. */
+  async createCliSession(input: CreateCliSessionInput): Promise<CliSession>;
+  async getCliSessionByRefreshHash(refreshTokenHash: string): Promise<CliSession | null>;
+  async markCliSessionUsed(sessionId: string, usedAt: string): Promise<void>;
+  async revokeCliSession(sessionId: string, revokedAt: string): Promise<void>;
 }
 
 export type IndexedJobInput = Pick<
@@ -213,6 +252,8 @@ export type IndexedJobInput = Pick<
 ```
 
 `Job` itself does not contain `namespaceId`; callers pass `IndexedJobInput` when writing D1 rows.
+
+`CliSession` is dashboard/account metadata, not execution state. It authorizes a human to obtain short-lived Orun access tokens for local remote-state runs. It must never contain GitHub OAuth access tokens, GitHub PATs, or raw Orun refresh tokens.
 
 The D1 jobs table is a derived dashboard index, not the authoritative coordinator state. It currently stores `job_id`, `run_id`, `namespace_id`, `component`, `status`, `runner_id`, `started_at`, `finished_at`, and `log_ref`. Fields such as `deps`, `lastError`, and `heartbeatAt` are available from the coordinator, not D1; `listJobs()` returns empty/null values for those fields unless a later migration stores them.
 

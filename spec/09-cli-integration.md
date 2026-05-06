@@ -44,7 +44,8 @@ Do not reintroduce the older `orun run --remote --job <id>` contract. The new us
 | Mode | Activation | Behavior |
 |------|------------|----------|
 | Local state | default `orun run` | Uses the filesystem state store under `.orun/executions/{execID}`. No backend HTTP calls. |
-| Remote state | `orun run --remote-state` | Uses orun-backend for run/job state, dependency checks, heartbeats, and log upload. Steps still execute locally through the selected runner. |
+| Remote state in GitHub Actions | `orun run --remote-state` with `GITHUB_ACTIONS=true` | Uses GitHub OIDC to authenticate the repo runner, then uses orun-backend for run/job state, dependency checks, heartbeats, and log upload. Steps still execute locally through the selected runner. |
+| Remote state on a developer machine | `orun run --remote-state` outside GitHub Actions | Uses `orun auth login` / `orun cloud link` human GitHub OAuth credentials to authenticate, then uses the same backend coordination APIs as GitHub Actions. |
 | Intent-enabled remote state | `intent.yaml` config | Uses remote state without requiring the CLI flag. |
 
 Environment variable alternative:
@@ -61,6 +62,8 @@ Recommended precedence:
 4. Local filesystem state
 
 The CLI should also support `--backend-url` and `ORUN_BACKEND_URL` for the backend endpoint.
+
+Remote state is not a CI-only feature. Local remote-state mode is required so developers can verify distributed claim/dependency/log behavior quickly from a laptop by launching multiple local `orun run --remote-state --job ...` processes against the same `ORUN_EXEC_ID`. Outside GitHub Actions, the CLI must authenticate through GitHub OAuth/device login and Orun-issued tokens, not GitHub Actions OIDC and not long-lived GitHub PATs.
 
 ---
 
@@ -223,6 +226,15 @@ Dependency responses:
 | `claimed: false, depsBlocked: true` | Exit 1 with a clear upstream dependency message. |
 
 Use exponential backoff with jitter for dependency polling, starting at 2 seconds and capping at 60 seconds. Default dependency wait timeout: 30 minutes, configurable later.
+
+The remote flow is identical for GitHub Actions and local developer machines after authentication:
+
+```text
+GitHub Actions: GitHub OIDC JWT -> Worker verifies repo workload -> run-scoped coordination
+Local machine: Orun CLI session JWT -> Worker verifies human namespace access -> same coordination APIs
+```
+
+The runner identity remains visible in `runnerId`; the actor is the GitHub Actions actor for OIDC runs and the GitHub login for local CLI runs.
 
 ---
 
@@ -458,16 +470,89 @@ Resolution order for backend URL:
 Token resolution:
 
 1. In GitHub Actions, request an OIDC token from `ACTIONS_ID_TOKEN_REQUEST_URL` using audience `orun` unless configured otherwise.
-2. Outside GitHub Actions, use `ORUN_TOKEN`.
-3. Later, `orun login` may store a session token in `~/.orun/config.yaml`.
+2. Outside GitHub Actions, use an Orun CLI access token from `orun auth login` / `orun cloud link`. If the access token is expired, refresh it with the stored Orun refresh token.
+3. If no local login exists and the command is interactive, prompt the user to run `orun auth login` or offer to start it.
+4. If no local login exists and the command is non-interactive, fail with a clear message explaining `orun auth login --device` or `ORUN_TOKEN`.
+5. `ORUN_TOKEN` is an explicit fallback for short-lived Orun machine tokens in unknown CI or automation. It must not be documented as a GitHub PAT path.
+
+`orun auth login` behavior:
+
+```text
+Default interactive: open browser through backend GitHub OAuth with a loopback callback.
+Headless: `orun auth login --device` uses backend-mediated GitHub device flow.
+Status: `orun auth status` prints login, backend URL, token expiry, and linked repo status.
+Logout: `orun auth logout` revokes the backend refresh token and removes local credentials.
+Token debug: `orun auth token --audience orun-backend` prints or copies a short-lived Orun access token only with explicit user intent.
+```
+
+`orun cloud link` should compose local auth plus repository detection:
+
+```text
+1. Ensure the user is logged in, starting `orun auth login` if needed.
+2. Detect the GitHub remote for the workspace.
+3. Verify the GitHub repo namespace is present in the Orun session or linked account.
+4. Persist backend URL and repo linkage in local orun config.
+5. Print a concise success summary.
+```
+
+Credential storage:
+
+- Prefer the OS credential store/keychain.
+- Fallback to `~/.orun/credentials.json` with `0600` permissions.
+- Store Orun access/refresh tokens only; never store GitHub OAuth access tokens or PATs.
+- Config such as backend URL may live in `~/.orun/config.yaml`.
 
 The Go HTTP client must:
 
 - Set `User-Agent: orun-cli/<version>`.
 - Set `Authorization: Bearer <token>` on every request.
+- Mark local CLI access tokens so the backend can distinguish CLI sessions from dashboard sessions on mutable coordination routes.
 - Parse backend `ApiError` JSON bodies.
 - Retry idempotent `5xx` responses with exponential backoff.
 - Use bounded timeouts: 5 seconds connect, 30 seconds read, 60 seconds log upload.
+
+## Local Remote-State Conformance
+
+The CLI must include a local conformance path that exercises the remote-state backend without GitHub Actions:
+
+```bash
+orun auth login
+orun plan --name remote-state-e2e --all
+export ORUN_BACKEND_URL=https://orun-api.sourceplane.ai
+export ORUN_REMOTE_STATE=true
+export ORUN_EXEC_ID=local-remote-state-e2e-$(date +%s)
+
+orun run <planID> --job foundation@dev.smoke --remote-state &
+orun run <planID> --job foundation@dev.smoke --remote-state &
+orun run <planID> --job api@dev.smoke --remote-state &
+wait
+
+orun status --remote-state --exec-id "$ORUN_EXEC_ID"
+orun logs --remote-state --exec-id "$ORUN_EXEC_ID" --job foundation@dev.smoke
+```
+
+The exact script may evolve with fixture job IDs, but it must prove:
+
+- local CLI sessions can claim/update/heartbeat/upload logs through the backend
+- duplicate local processes targeting the same job do not both execute it
+- dependency waiting polls `/runnable` instead of failing due to empty local state
+- status and logs work from a separate local command
+- the same plan/run ID can be reused across several local shells
+
+This local conformance is required because it lets developers iterate on remote-state behavior faster than waiting for GitHub Actions matrix runs.
+
+## Future SaaS Dispatch Alignment
+
+The local auth model must not paint Orun Cloud into a corner. Later SaaS dispatch should use this trust split:
+
+```text
+Human user session       -> authorizes catalog publishing and UI dispatch request
+Signed ExecutionRequest  -> seals requested component/job/env/plan intent
+Repo workflow identity   -> GitHub OIDC proves the runner actually belongs to the repo
+Run-scoped state token    -> coordinates only the selected execution
+```
+
+Cloud UI must not directly claim jobs as a user session. SaaS dispatch creates a signed request and triggers the repo workflow; the runner authenticates back with workload identity and executes only the sealed plan/jobs allowed by policy.
 
 ---
 
@@ -492,12 +577,16 @@ For `sourceplane/orun`:
 
 - `orun run` without `--remote-state` is behavior-compatible with the current implementation.
 - `orun run <planID> --remote-state` resolves a saved plan by hash prefix and coordinates through orun-backend.
+- Outside GitHub Actions, `orun run <planID> --remote-state` uses GitHub OAuth/device login credentials from `orun auth login`.
+- The CLI supports `orun auth login`, `orun auth login --device`, `orun auth status`, `orun auth logout`, `orun auth token`, and `orun cloud link`.
+- The CLI never stores raw GitHub access tokens or PATs as Orun credentials.
 - `orun run <planID> --env dev --remote-state` and `--env stage` can run independently while sharing the same backend run state.
 - `--job` with `--remote-state` waits for dependencies instead of failing only because local state is missing them.
 - Job runtime IDs include the plan ID and are exposed through environment variables.
 - `intent.yaml` can enable remote state.
 - GitHub Actions example workflows and docs cover job matrix fan-out, environment fan-out, duplicate claim behavior, dependency waits, and final `status`/`logs` verification.
 - Local filesystem state is implemented through the same `StateBackend` interface and preserves status/log/resume compatibility.
+- Local remote-state conformance is documented and automated enough to verify duplicate claims, dependency waits, status, and logs from a developer machine.
 - Unit tests cover file state, remote client request/response handling, dependency wait behavior, and ID derivation.
 - `go test ./...` passes.
 
@@ -506,6 +595,8 @@ For `sourceplane/orun-backend`:
 - `POST /v1/runs` supports deterministic `runId` and idempotent create/join.
 - Worker update forwarding includes `runnerId`.
 - Worker exposes enough run/job read APIs for `orun status --remote-state` and `orun logs --remote-state`.
+- Worker supports CLI session auth for local mutable remote-state routes while keeping dashboard sessions read-oriented.
+- Worker supports CLI OAuth/device login, access-token refresh, logout/revocation, and hashed refresh-token storage.
 - Existing coordinator/storage tests still pass.
 
 For verification:
