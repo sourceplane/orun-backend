@@ -702,7 +702,7 @@ describe("RateLimitCounter DO", () => {
     expect(resp.status).toBe(200);
     const data = await resp.json() as { limited: boolean; remaining: number };
     expect(data.limited).toBe(false);
-    expect(data.remaining).toBe(19);
+    expect(data.remaining).toBe(99);
   });
 
   it("returns limited when tokens exhausted", async () => {
@@ -710,7 +710,7 @@ describe("RateLimitCounter DO", () => {
     const state = { storage: {} } as unknown as DurableObjectState;
     const counter = new RateLimitCounter(state, {});
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 100; i++) {
       await counter.fetch(new Request("https://local/check"));
     }
 
