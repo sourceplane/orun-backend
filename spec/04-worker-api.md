@@ -31,18 +31,18 @@ All endpoints are prefixed `/v1/`. The Worker returns JSON for all responses.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/v1/runs/:runId/jobs/:jobId/claim` | OIDC | Atomically claim a job |
-| `POST` | `/v1/runs/:runId/jobs/:jobId/update` | OIDC | Update job status (success/failed) |
-| `POST` | `/v1/runs/:runId/jobs/:jobId/heartbeat` | OIDC | Send heartbeat to prevent abandonment |
+| `POST` | `/v1/runs/:runId/jobs/:jobId/claim` | OIDC or CLI Session | Atomically claim a job |
+| `POST` | `/v1/runs/:runId/jobs/:jobId/update` | OIDC or CLI Session | Update job status (success/failed) |
+| `POST` | `/v1/runs/:runId/jobs/:jobId/heartbeat` | OIDC or CLI Session | Send heartbeat to prevent abandonment |
 | `GET` | `/v1/runs/:runId/jobs` | OIDC or Session | List indexed jobs for status views |
 | `GET` | `/v1/runs/:runId/jobs/:jobId/status` | OIDC or Session | Get job status |
-| `GET` | `/v1/runs/:runId/runnable` | OIDC | Get list of claimable jobs |
+| `GET` | `/v1/runs/:runId/runnable` | OIDC or CLI Session | Get list of claimable jobs |
 
 ### Logs
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/v1/runs/:runId/logs/:jobId` | OIDC | Upload job log (streamed or full) |
+| `POST` | `/v1/runs/:runId/logs/:jobId` | OIDC or CLI Session | Upload job log (streamed or full) |
 | `GET` | `/v1/runs/:runId/logs/:jobId` | OIDC or Session | Fetch job log content |
 
 ### Auth
@@ -51,6 +51,10 @@ All endpoints are prefixed `/v1/`. The Worker returns JSON for all responses.
 |--------|------|------|-------------|
 | `GET` | `/v1/auth/github` | None | Redirect to GitHub OAuth |
 | `GET` | `/v1/auth/github/callback` | None | GitHub OAuth callback, issue session JWT |
+| `POST` | `/v1/auth/cli/device/start` | None | Start backend-mediated GitHub device login |
+| `POST` | `/v1/auth/cli/device/poll` | None | Poll device login and issue Orun CLI credentials |
+| `POST` | `/v1/auth/cli/token` | None | Exchange Orun refresh token for short-lived access token |
+| `POST` | `/v1/auth/cli/logout` | None | Revoke Orun CLI refresh token |
 
 ### Accounts & Repo Linking
 
@@ -71,6 +75,7 @@ Every request goes through `authenticate(request, env)` which returns a `Request
 ```typescript
 interface RequestContext {
   type: "oidc" | "session";
+  sessionKind?: "dashboard" | "cli";
   namespace: Namespace;              // for OIDC — single namespace from token
   allowedNamespaceIds: string[];     // for session — all accessible namespaces
   actor: string;
@@ -88,7 +93,20 @@ interface RequestContext {
 1. Extract `Authorization: Bearer <jwt>` header
 2. Verify signature against `ORUN_SESSION_SECRET` (Workers secret)
 3. Extract `allowedNamespaceIds` from session claims
-4. Return `RequestContext` with `type: "session"`
+4. Extract optional `sessionKind`. Dashboard sessions are read-oriented. CLI sessions may use mutable coordination routes for local remote-state runs when namespace access is valid.
+5. Return `RequestContext` with `type: "session"`
+
+### Local Remote-State CLI Flow
+
+When `orun run --remote-state` is run outside GitHub Actions, the CLI authenticates a human through GitHub OAuth/device login and sends an Orun access token:
+
+```text
+Authorization: Bearer <orun session JWT with sessionKind="cli">
+```
+
+This is allowed on mutable coordination routes so local developers can exercise the same backend coordination machinery used by GitHub Actions. The Worker must still enforce namespace access against the run namespace and must record the human actor on run/job metadata.
+
+Dashboard sessions must remain read-oriented and must not be allowed to claim, update, heartbeat, or upload logs. If the Worker cannot distinguish dashboard from CLI sessions, it must reject session tokens on mutable coordination routes until the CLI session token shape is implemented.
 
 ### Namespace Enforcement
 Before **any** storage access:
@@ -182,7 +200,7 @@ When `runId` is client-supplied, creation must be idempotent for the same namesp
 **Request body**: `ClaimJobRequest`
 
 **Actions**:
-1. Verify OIDC auth (session tokens may not claim)
+1. Verify OIDC auth or CLI session auth (dashboard sessions may not claim)
 2. Enforce namespace access
 3. Forward to coordinator: `coordinator.fetch(new Request("/jobs/${jobId}/claim", ...))`
 4. Return coordinator response directly
@@ -196,7 +214,7 @@ If `claimed: false`, return `200` not `409` — the runner should interpret the 
 **Request body**: `{ runnerId: string; status: "success" | "failed"; error?: string }`
 
 **Actions**:
-1. Verify OIDC auth
+1. Verify OIDC auth or CLI session auth (dashboard sessions may not update)
 2. Enforce namespace access
 3. Forward to coordinator as `CoordinatorUpdateJobRequest`
 4. After a successful coordinator response, mirror the job/run summary into D1 with `ctx.waitUntil(...)`
@@ -208,7 +226,7 @@ The Worker must not drop `runnerId`; the coordinator uses it to reject updates f
 ### `POST /v1/runs/:runId/logs/:jobId`
 
 **Actions**:
-1. Verify OIDC auth
+1. Verify OIDC auth or CLI session auth (dashboard sessions may not upload logs)
 2. Read request body as text stream
 3. Write to R2 via `R2Storage.writeLog(namespaceId, runId, jobId, body, { expiresAt })`
 4. Update D1 `jobs` row with `logRef`

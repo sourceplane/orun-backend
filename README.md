@@ -38,7 +38,7 @@ GitHub Actions Runner          Browser (UI)
 ## Key Design Decisions
 
 - **Identity**: `repository_id` (GitHub's numeric ID, not `org/repo`) is the canonical namespace. Survives renames and transfers.
-- **Auth**: GitHub OIDC for CI runners (zero config), GitHub OAuth for UI (no passwords).
+- **Auth**: GitHub OIDC for CI runners, GitHub OAuth/device login for humans (dashboard and local CLI), Orun-issued short-lived tokens for remote-state coordination.
 - **Accounts**: Optional. The system works without accounts via OIDC. Accounts add dashboard visibility and higher rate limits.
 - **No zero-trust encryption** in Phase 1. Strong namespace isolation at every storage layer.
 
@@ -131,6 +131,9 @@ GET    /v1/accounts/repos                    List linked repos
 ## CLI Usage
 
 ```bash
+# Local human login for cloud-backed state
+orun auth login
+
 # Run distributed with backend-backed state
 orun run 0b673779a274 --remote-state
 

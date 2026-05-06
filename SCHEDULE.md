@@ -31,6 +31,18 @@ The critical design insight driving this order: **build the cloud control plane 
                │
                ▼
      [09] Dashboard UI (future)
+               │
+               ▼
+ [10] CLI Cloud Auth Backend
+               │
+               ▼
+ [11] orun CLI Auth + Local Remote State
+               │
+               ▼
+ [12] Local Remote-State Conformance
+               │
+               ▼
+ [13] CLI Bootstrap
 ```
 
 Tasks [03], [04], [05] are independent and can be delegated in parallel after [02] completes.
@@ -45,8 +57,8 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 01 — Monorepo Scaffolding
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/01-monorepo-structure.md`  
+**Delegate to**: 1 agent
+**Input spec**: `spec/01-monorepo-structure.md`
 **Deliverables**:
 - Directory structure: `apps/worker`, `packages/types`, `packages/coordinator`, `packages/storage`, `packages/client`
 - `pnpm-workspace.yaml` declaring `apps/*` and `packages/*`
@@ -68,9 +80,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 02 — `@orun/types` Package
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/03-types-package.md`  
-**Depends on**: Task 01  
+**Delegate to**: 1 agent
+**Input spec**: `spec/03-types-package.md`
+**Depends on**: Task 01
 **Deliverables**:
 - `packages/types/src/index.ts` — all type exports
 - `packages/types/src/paths.ts` — path utility functions
@@ -82,9 +94,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 03 — `RunCoordinator` Durable Object
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/05-coordinator-do.md`, `spec/03-types-package.md`  
-**Depends on**: Task 02  
+**Delegate to**: 1 agent
+**Input spec**: `spec/05-coordinator-do.md`, `spec/03-types-package.md`
+**Depends on**: Task 02
 **Deliverables**:
 - `packages/coordinator/src/coordinator.ts` — `RunCoordinator` class
 - Full implementation of `/init`, `/jobs/:jobId/claim`, `/jobs/:jobId/update`, `/jobs/:jobId/heartbeat`, `/jobs/:jobId/status`, `/runnable`, `/state`, `/cancel`
@@ -97,9 +109,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 04 — `@orun/storage` Package
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/07-storage.md`, `spec/03-types-package.md`  
-**Depends on**: Task 02  
+**Delegate to**: 1 agent
+**Input spec**: `spec/07-storage.md`, `spec/03-types-package.md`
+**Depends on**: Task 02
 **Deliverables**:
 - `packages/storage/src/r2.ts` — `R2Storage` class
 - `packages/storage/src/d1.ts` — `D1Index` class
@@ -113,9 +125,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 05 — Auth Module
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/06-auth.md`, `spec/03-types-package.md`  
-**Depends on**: Task 02  
+**Delegate to**: 1 agent
+**Input spec**: `spec/06-auth.md`, `spec/03-types-package.md`
+**Depends on**: Task 02
 **Deliverables**:
 - `apps/worker/src/auth/oidc.ts` — OIDC verification
 - `apps/worker/src/auth/session.ts` — session JWT issue/verify
@@ -131,9 +143,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 06 — Worker API
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/04-worker-api.md`, all prior specs  
-**Depends on**: Tasks 03, 04, 05  
+**Delegate to**: 1 agent
+**Input spec**: `spec/04-worker-api.md`, all prior specs
+**Depends on**: Tasks 03, 04, 05
 **Deliverables**:
 - `apps/worker/src/index.ts` — main Worker entrypoint with routing
 - Handler files for each endpoint group
@@ -154,9 +166,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 07 — Account & Repo Linking
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/08-account-repo-linking.md`  
-**Depends on**: Task 06  
+**Delegate to**: 1 agent
+**Input spec**: `spec/08-account-repo-linking.md`
+**Depends on**: Task 06
 **Deliverables**:
 - `POST /v1/accounts`, `GET /v1/accounts/me`
 - `POST /v1/accounts/repos`, `GET /v1/accounts/repos`, `DELETE /v1/accounts/repos/:namespaceId`
@@ -167,9 +179,9 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ### Task 08 — orun Remote State Client Integration (Go)
 
-**Delegate to**: 1 agent  
-**Input spec**: `spec/09-cli-integration.md`  
-**Depends on**: Task 06 (backend must be deployed or mockable)  
+**Delegate to**: 1 agent
+**Input spec**: `spec/09-cli-integration.md`
+**Depends on**: Task 06 (backend must be deployed or mockable)
 **Deliverables**:
 - Work in the cloned `sourceplane/orun` repository for CLI changes.
 - `internal/statebackend` or equivalent package defining a `StateBackend` interface.
@@ -188,10 +200,11 @@ Tasks [03], [04], [05] are independent and can be delegated in parallel after [0
 
 ---
 
-## Phase 3 — Dashboard & Bootstrap (Future)
+## Phase 3 — Dashboard, Local Cloud Auth, and Local Remote-State
 
 > **Prerequisite**: Task 0008.3 (live Cloudflare deployment) must be verified before Dashboard UI.
-> Live Worker URL: `https://orun-api.rahulvarghesepullely.workers.dev`
+> Live Worker URL: `https://orun-api.sourceplane.ai`
+> Live Dashboard URL: `https://orun-dashboard.sourceplane.ai`
 > Stack version: `oci://ghcr.io/sourceplane/stack-tectonic:0.12.0`
 
 ### Task 09 — Dashboard UI
@@ -211,7 +224,76 @@ Build a static React/Vite/TypeScript operational dashboard served from Cloudflar
 **Deferred**: Browser repo-link creation (requires safe token/install model proposal).
 See `spec/11-dashboard-ui.md` and `ai/proposals/task-0009-spec-update.md`.
 
-### Task 10 — CLI Bootstrap (`orun backend init`)
+### Task 10 — CLI Cloud Auth Backend
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/04-worker-api.md`, `spec/06-auth.md`, `spec/07-storage.md`, `spec/09-cli-integration.md`
+**Depends on**: Task 09
+
+Implement backend support for local human CLI authentication so local `orun run --remote-state` can use the same coordination APIs as GitHub Actions:
+- CLI browser OAuth mode with loopback `returnTo` validation (`client=cli`)
+- backend-mediated GitHub device flow for `orun auth login --device`
+- Orun access token + refresh token issuing
+- D1 `cli_sessions` migration with hashed refresh tokens only
+- refresh and logout endpoints
+- session token shape that distinguishes CLI sessions from dashboard sessions
+- mutable coordination routes accept OIDC or CLI sessions, but still reject dashboard sessions
+- docs/tests proving GitHub OAuth access tokens and PATs are never stored or returned
+
+**Validation**:
+- Worker/auth/storage tests cover device pending/success/denial/expiry, loopback validation, refresh, revocation, and dashboard-vs-CLI route authorization.
+- `pnpm exec turbo run test typecheck build` passes.
+- `kiox -- orun plan --changed` and `kiox -- orun run --changed` pass for delivery wiring.
+
+### Task 11 — orun CLI Auth Commands and Local Remote-State Auth
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/06-auth.md`, `spec/09-cli-integration.md`
+**Depends on**: Task 10
+**Primary repo**: `sourceplane/orun`
+
+Implement CLI-side local auth:
+- `orun auth login`
+- `orun auth login --device`
+- `orun auth status`
+- `orun auth logout`
+- `orun auth token --audience orun-backend`
+- `orun cloud link`
+- secure credential storage using OS keychain when available, falling back to `~/.orun/credentials.json` with `0600`
+- backend URL config in `~/.orun/config.yaml`
+- remote-state token resolver:
+  - GitHub Actions: GitHub OIDC
+  - local: Orun CLI access token, refreshed with Orun refresh token
+  - unknown automation: explicit short-lived `ORUN_TOKEN` fallback
+- no storage of GitHub OAuth access tokens or GitHub PATs
+
+**Validation**:
+- Go unit tests for login flows with mocked backend, credential storage fallback, refresh behavior, auth status/logout, and token resolution precedence.
+- Existing `orun run` local mode remains unchanged.
+- `go test ./...` and targeted race tests pass.
+
+### Task 12 — Local Remote-State Conformance Harness
+
+**Delegate to**: 1 agent
+**Input spec**: `spec/09-cli-integration.md`
+**Depends on**: Task 11
+**Primary repo**: `sourceplane/orun`
+
+Add a fast local verification path for remote-state behavior using the live backend and local human auth:
+- local script or example under `examples/remote-state-matrix/`
+- docs for `orun auth login`, `ORUN_BACKEND_URL`, `ORUN_REMOTE_STATE`, and shared `ORUN_EXEC_ID`
+- duplicate local job claim proof
+- dependency waiting proof through `/runnable`
+- status/log inspection from a separate local command
+- troubleshooting for expired local sessions, missing repo access, and backend URL mismatch
+- optional CI-safe dry-run tests using mocked backend where live auth is unavailable
+
+**Validation**:
+- The local conformance path is runnable by a developer without GitHub Actions.
+- It proves the same remote-state claim/update/heartbeat/log/status behavior used in GHA.
+- Website/docs examples are copyable and do not mention GitHub PATs as the primary auth model.
+
+### Task 13 — CLI Bootstrap (`orun backend init`)
 
 Implement auto-provisioning of Cloudflare resources from the CLI:
 - Cloudflare REST API client in Go
@@ -242,6 +324,18 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 - [ ] The conformance workflow includes at least one duplicate job target to prove idempotent claim or already-complete handling
 - [ ] `orun status --remote-state --exec-id <run-id>` shows correct run state
 - [ ] `orun logs --remote-state --exec-id <run-id> --job <job-id>` shows logs
+
+### Phase 3 local auth complete when:
+
+- [ ] `orun auth login` works through browser OAuth without storing GitHub tokens
+- [ ] `orun auth login --device` works for headless terminals
+- [ ] `orun auth status` shows login, backend URL, repo access, and access-token expiry
+- [ ] `orun auth logout` revokes the backend refresh token and removes local credentials
+- [ ] `orun cloud link` detects the GitHub remote and verifies repo access
+- [ ] Local `orun run <plan-id> --remote-state --job <job-id>` uses Orun CLI session auth outside GitHub Actions
+- [ ] Multiple local processes sharing `ORUN_EXEC_ID` prove duplicate claim safety and dependency waiting through the backend
+- [ ] Dashboard sessions remain read-oriented; CLI sessions and OIDC are the only mutable coordination identities
+- [ ] No docs or examples require GitHub PATs for normal local remote-state usage
 
 ---
 
