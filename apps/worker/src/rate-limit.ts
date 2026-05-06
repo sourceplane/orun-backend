@@ -2,8 +2,8 @@ import type { Env } from "@orun/types";
 import { errorJson } from "./http";
 
 const WINDOW_MS = 1000;
-const MAX_TOKENS = 20;
-const REFILL_RATE = 5;
+const MAX_TOKENS = 300;
+const REFILL_RATE = 30;
 
 export class RateLimitCounter {
   private tokens: number = MAX_TOKENS;
