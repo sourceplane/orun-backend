@@ -307,6 +307,35 @@ export class RunCoordinator {
     }
 
     if (job.status === "pending") {
+      // Sweep any "running" dep whose heartbeat has expired — mirror of the
+      // alarm sweep so the claim path never returns depsWaiting for a dead dep.
+      const nowMs = Date.now();
+      let swept = false;
+      for (const dep of job.deps) {
+        const depJob = state.jobs[dep];
+        if (depJob.status === "running") {
+          const heartbeatAge = depJob.heartbeatAt
+            ? nowMs - new Date(depJob.heartbeatAt).getTime()
+            : Infinity;
+          if (heartbeatAge > HEARTBEAT_TIMEOUT_MS) {
+            depJob.status = "failed";
+            depJob.lastError = "runner heartbeat timeout";
+            if (!depJob.finishedAt) {
+              depJob.finishedAt = new Date().toISOString();
+            }
+            swept = true;
+          }
+        }
+      }
+      if (swept) {
+        const allJobs = Object.values(state.jobs);
+        if (allJobs.some((j) => j.status === "failed")) {
+          state.status = "failed";
+        }
+        state.updatedAt = new Date().toISOString();
+        await this.persistState();
+      }
+
       for (const dep of job.deps) {
         const depJob = state.jobs[dep];
         if (depJob.status === "failed") {

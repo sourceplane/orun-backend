@@ -249,6 +249,42 @@ describe("RunCoordinator", () => {
       expect(body.depsBlocked).toBe(true);
     });
 
+    it("sweeps dep with expired heartbeat and returns depsBlocked on claim", async () => {
+      vi.useFakeTimers();
+      const { coordinator } = createCoordinator();
+      await initCoordinator(coordinator);
+
+      // Claim job a so it becomes "running"
+      await coordinator.fetch(req("POST", "/jobs/a/claim", { runnerId: "r1" }));
+
+      // Advance time beyond HEARTBEAT_TIMEOUT_MS (300s) without sending heartbeats
+      vi.advanceTimersByTime(301_000);
+
+      // Job b depends on job a. Claiming b should detect the stale heartbeat,
+      // mark a as "failed", and return depsBlocked — not depsWaiting.
+      const res = await coordinator.fetch(
+        req("POST", "/jobs/b/claim", { runnerId: "r2" }),
+      );
+      const body = (await json(res)) as {
+        claimed: boolean;
+        depsBlocked?: boolean;
+        depsWaiting?: boolean;
+      };
+      expect(body.claimed).toBe(false);
+      expect(body.depsBlocked).toBe(true);
+      expect(body.depsWaiting).toBeUndefined();
+
+      // Job a should now be marked "failed" with the heartbeat timeout error
+      const stateRes = await coordinator.fetch(req("GET", "/state"));
+      const state = (await stateRes.json()) as {
+        jobs: Record<string, { status: string; lastError: string }>;
+      };
+      expect(state.jobs.a.status).toBe("failed");
+      expect(state.jobs.a.lastError).toBe("runner heartbeat timeout");
+
+      vi.useRealTimers();
+    });
+
     it("is rejected when another runner has a fresh heartbeat", async () => {
       const { coordinator } = createCoordinator();
       await initCoordinator(coordinator);
