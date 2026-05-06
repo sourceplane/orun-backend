@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI
 
 on:
   pull_request:
@@ -7,62 +7,69 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  packages: read
+  id-token: write   # orun remote-state OIDC authentication
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+  ORUN_BACKEND_URL: https://orun-api.sourceplane.ai
 
 jobs:
-  review-plan:
-    name: Review Plan
-    if: github.event_name == 'pull_request'
+  plan:
+    name: Orun Plan
     runs-on: ubuntu-latest
+    outputs:
+      job-matrix: ${{ steps.plan.outputs.job-matrix }}
+      plan-checksum: ${{ steps.plan.outputs.plan-checksum }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Initialize orun workspace
-        uses: sourceplane/kiox-action@v2.1.2
+      - uses: sourceplane/orun-action@v1.1.0
+      - name: Plan with Orun
+        id: plan
+        run: |
+          orun plan \
+            --changed \
+            --output plan.json
+          echo "plan-checksum=$(jq -r '.metadata.checksum | ltrimstr("sha256-") | .[0:12]' plan.json)" >> $GITHUB_OUTPUT
+          echo "job-matrix=$(jq -c '[.jobs[] | {"job-id": .id, "job-name": .checkName}]' plan.json)" >> $GITHUB_OUTPUT
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
         with:
-          version: v0.4.3
+          name: orun-plan
+          path: plan.json
 
-      - name: Compile review-scoped plan
-        run: kiox -- orun plan --changed
-
-  build-deploy:
-    name: Build & Deploy
+  execute:
+    name: ${{ matrix.job-name }}
+    needs: plan
+    if: needs.plan.outputs.job-matrix != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.job-matrix) }}
+    concurrency:
+      group: orun-${{ github.ref }}-${{ matrix.job-id }}
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Initialize orun workspace
-        uses: sourceplane/kiox-action@v2.1.2
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
         with:
-          version: v0.4.3
-
-      - name: Execute (PR - changed only)
-        if: github.event_name == 'pull_request'
-        id: orun-pr
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          name: orun-plan
+      - uses: sourceplane/orun-action@v1.1.0
+      - name: run job steps
         run: |
-          set -o pipefail
-          kiox -- orun run --changed 2>&1 | tee /tmp/orun-run.log
-
-      - name: Execute (production - all components)
-        if: github.event_name == 'push'
-        id: orun-push
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -o pipefail
-          kiox -- orun run 2>&1 | tee /tmp/orun-run.log
-
-      - name: Show failed job logs
-        if: failure()
-        run: |
-          exec_id=$(grep -oP 'Run: \K\S+' /tmp/orun-run.log | tail -1)
-          echo "Fetching failed logs for exec-id: ${exec_id}"
-          kiox -- orun logs --exec-id "${exec_id}" --failed 2>&1 || true
+          orun run \
+            --plan plan.json \
+            --runner github-actions \
+            --remote-state \
+            --job "${{ matrix.job-id }}" \
+            --exec-id "${{ github.run_id }}-${{ github.run_attempt }}"

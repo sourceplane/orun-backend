@@ -1,0 +1,303 @@
+For Orun, the best identity model is:
+
+```text
+CI runner identity  → OIDC / workload identity
+Local human login   → browser OAuth or device login
+SaaS dispatch       → signed execution request + repo installation identity
+Fallback runners    → short-lived machine token, not long-lived PAT
+```
+
+Do **not** try to make local login use GitHub Actions OIDC. GitHub OIDC is meant for GitHub Actions workflows and depends on workflow permissions such as `id-token: write`; it is not available from a normal laptop shell. GitHub documents OIDC as a way for Actions workflows to get tokens without storing cloud secrets, and its OIDC reference is specifically scoped to Actions workflows. ([GitHub Docs][1])
+
+---
+
+# Best UX for Orun
+
+## 1. Inside GitHub Actions
+
+Use:
+
+```bash
+orun auth login --provider github-oidc
+```
+
+or hidden inside:
+
+```bash
+orun ci plan --auth auto
+orun ci execute --auth auto
+```
+
+Behavior:
+
+```text
+GITHUB_ACTIONS=true detected
+request GitHub OIDC token
+send token to Orun backend
+backend verifies issuer, repo, ref, sha, workflow, audience
+backend returns short-lived Orun run token
+```
+
+This is the strongest CI model because there is no static secret in the repo.
+
+---
+
+## 2. Local developer machine
+
+Use browser/device login:
+
+```bash
+orun auth login
+```
+
+UX:
+
+```text
+Opening browser to login...
+✓ authenticated as rahul
+✓ linked GitHub account
+✓ repository access verified: sourceplane/example-platform-repo
+```
+
+For headless terminals:
+
+```bash
+orun auth login --device
+```
+
+Device flow is designed for CLIs and headless apps; GitHub’s OAuth docs say device flow is for authorizing users in headless applications such as CLI tools, and GitHub CLI’s normal `gh auth login` also uses a browser-based flow and stores the token in the system credential store when possible. ([GitHub Docs][2])
+
+Local login should identify the **human**, not the repo workload.
+
+---
+
+## 3. Other CI runners
+
+Use this order:
+
+```text
+1. Native OIDC if the runner supports it
+2. Cloud workload identity if running inside cloud
+3. Orun machine token as fallback
+```
+
+Example:
+
+```bash
+orun auth login --provider auto
+```
+
+Detection:
+
+```text
+GitHub Actions      → github-oidc
+GitLab CI           → gitlab-oidc
+Buildkite           → buildkite-oidc / agent token exchange
+CircleCI            → circleci-oidc if available
+Cloudflare Workers  → Cloudflare service token / deployment identity
+Local               → browser/device OAuth
+Unknown CI          → ORUN_TOKEN
+```
+
+---
+
+# Recommended Orun auth commands
+
+```bash
+orun auth login
+orun auth login --device
+orun auth login --provider github-oidc
+orun auth status
+orun auth logout
+orun auth token --audience orun-backend
+```
+
+But normal users should mostly run:
+
+```bash
+orun cloud link
+```
+
+or:
+
+```bash
+orun ci plan --auth auto
+```
+
+---
+
+# How local login should work
+
+Local login should be a **user session**:
+
+```text
+User opens browser
+GitHub/Orun OAuth login completes
+Orun CLI stores refresh token securely
+CLI exchanges it for short-lived access tokens
+Backend checks what repos/orgs the user can access
+CLI can publish catalogue or dispatch allowed jobs
+```
+
+Do not store raw GitHub PATs as the main Orun credential. Prefer Orun-issued short-lived access tokens after GitHub OAuth verification.
+
+Good local flow:
+
+```bash
+orun cloud link
+```
+
+Output:
+
+```text
+✓ Logged in as rahul
+✓ Git remote detected: github.com/sourceplane/example-platform-repo
+✓ Repository access verified
+✓ Local workspace linked to Orun Cloud
+✓ Catalogue publishing enabled
+```
+
+Then:
+
+```bash
+orun catalog publish
+orun run --changed
+orun dispatch web-console --env staging --job deploy
+```
+
+---
+
+# How CI login should work
+
+CI login should be a **workload session**:
+
+```text
+GitHub runner requests OIDC token
+Orun backend validates token claims
+Orun backend checks repo is linked/allowed
+Orun backend issues short-lived run token
+Runner uses token only for this run
+```
+
+Important checks on backend:
+
+```text
+issuer      = https://token.actions.githubusercontent.com
+repository  = expected owner/repo
+ref         = allowed branch/tag
+sha         = planned sha
+workflow    = allowed workflow
+event       = push / workflow_dispatch / allowed event
+audience    = orun
+```
+
+This is safer than secrets because the trust comes from the runner identity and repo claims, not from a copied token.
+
+---
+
+# How SaaS dispatch should work later
+
+For Orun Cloud, don’t let SaaS send arbitrary commands to the repo.
+
+Use this flow:
+
+```text
+1. Repo publishes catalog snapshot
+2. Cloud UI shows allowed components/jobs/envs
+3. User clicks dispatch
+4. Cloud creates signed ExecutionRequest
+5. GitHub workflow_dispatch starts repo workflow
+6. Runner uses GitHub OIDC to authenticate back to Orun
+7. Orun verifies both:
+   - repo runner identity
+   - cloud-signed execution request
+8. Runner executes only allowed jobs from sealed plan
+```
+
+That preserves trust:
+
+```text
+Cloud can request
+Repo workflow must verify
+Orun policy must allow
+Runner identity must match
+Plan must be sealed
+```
+
+---
+
+# Token types I would use
+
+| Context             | Identity        | Token                                       |
+| ------------------- | --------------- | ------------------------------------------- |
+| Local CLI           | Human user      | OAuth/device login → Orun short-lived token |
+| GitHub Actions      | Repo workflow   | GitHub OIDC → Orun short-lived run token    |
+| Other CI with OIDC  | Runner workload | Provider OIDC → Orun short-lived run token  |
+| Unknown CI          | Machine         | Repo-scoped Orun token with expiry          |
+| Orun Cloud dispatch | SaaS request    | Signed execution request                    |
+| Job coordination    | Run worker      | Run-scoped state token                      |
+
+---
+
+# Best default behavior
+
+## Local
+
+```bash
+orun run --changed
+```
+
+No login required.
+
+```bash
+orun run --changed --remote-state
+```
+
+Requires:
+
+```bash
+orun auth login
+```
+
+## GitHub Actions
+
+No explicit login command needed:
+
+```bash
+orun ci plan --auth auto
+orun ci execute --auth auto
+```
+
+## Cloud
+
+```bash
+orun cloud link
+orun catalog publish
+```
+
+---
+
+# My recommendation
+
+Build auth around this rule:
+
+> **Humans login with OAuth. Runners login with OIDC. SaaS dispatches with signed requests.**
+
+That gives you the cleanest transition:
+
+```text
+Free OSS:
+  local execution needs no login
+  GitHub Actions uses OIDC automatically
+  optional self-hosted remote backend
+
+Orun Cloud:
+  same CLI
+  same workflows
+  hosted catalogue
+  hosted state backend
+  SaaS dispatch
+```
+
+This also fits Orun’s current model because planning and execution are already separated by an immutable plan boundary, and runtime state is already a concept for resumability/checksum-safe execution. 
+
