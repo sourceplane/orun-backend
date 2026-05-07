@@ -3,7 +3,7 @@
   "current_task": 15,
   "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14],
   "repo_health": "yellow",
-  "next_focus": "task-0015-cli-bootstrap",
+  "next_focus": "task-0015-verifier",
   "last_verified": "2026-05-07",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -44,6 +44,8 @@
     "Task 0013.1 verified PASS on 2026-05-07: synchronous rejection of missing/non-string component.path and non-array components confirmed before ctx.waitUntil; 4 regression tests added; 209 worker tests pass; CI run 25510722727 success on all 4 jobs; live smoke checks clean. Advancing to task-0014-dashboard-catalog-ui.",
     "Task 0014 implementer prompt produced on 2026-05-07: build the catalog-first dashboard UI in apps/dashboard using the Task 0013 catalog APIs while preserving existing run/job/log workflows.",
     "Task 0014 verifier prompt produced on 2026-05-07: verify PR #33 head 42bf3d4 and CI run 25512977088 for the catalog-first dashboard UI, including local checks, CI log inspection, and browser visual QA.",
-    "Task 0014 verified PASS on 2026-05-07: catalog-first dashboard UI (PR #33). Authenticated shell defaults to Catalog, all views backed by @orun/client, OAuth/session security intact, 57 RTL tests pass, CI run 25512977088 green (9 meaningful Pages steps per env). Live browser QA deferred to post-merge Pages deploy. Advancing to task-0015-cli-bootstrap."
+    "Task 0014 verified PASS on 2026-05-07: catalog-first dashboard UI (PR #33). Authenticated shell defaults to Catalog, all views backed by @orun/client, OAuth/session security intact, 57 RTL tests pass, CI run 25512977088 green (9 meaningful Pages steps per env). Live browser QA deferred to post-merge Pages deploy. Advancing to task-0015-cli-bootstrap.",
+    "Task 0015 implementer prompt produced on 2026-05-07: implement `orun backend init/status/destroy` in sourceplane/orun with an embedded backend bundle, Cloudflare REST client, safe config, docs, and non-live test coverage.",
+    "Task 0015 implementation complete on 2026-05-08: PR #86 opened in sourceplane/orun (branch codex/task-0015-backend-bootstrap). Implements orun backend init/status/destroy via Cloudflare REST APIs; embedded Worker bundle (124K) and 5 D1 migrations; fake-server tests; all go test/race/vet pass. Live Cloudflare smoke not run (no credentials in implementer env). Verifier to review PR #86."
   ]
 }
