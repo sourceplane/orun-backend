@@ -31,7 +31,7 @@ GitHub Actions Runner          Browser (UI)
 
 **R2** stores logs and artifacts. Append-only, never polled for coordination.
 
-**D1** stores a queryable index for the dashboard. Eventually consistent, derived from DO state.
+**D1** stores a queryable index for the dashboard: runs/jobs today, catalog components/relations/events next. It is eventually consistent and derived from DO state or catalog sync uploads.
 
 ---
 
@@ -99,7 +99,7 @@ wrangler deploy --env production
 | `@orun/storage` | R2 + D1 typed utilities |
 | `@orun/worker` | Cloudflare Worker: API gateway + auth + routing |
 | `@orun/client` | HTTP client SDK for the API |
-| `@orun/dashboard` | Static operational dashboard (Cloudflare Pages) |
+| `@orun/dashboard` | Static dashboard: operational run views today, catalog-first product next |
 
 ---
 
@@ -124,6 +124,13 @@ GET    /v1/auth/github/callback              GitHub OAuth callback
 POST   /v1/accounts                          Create account
 POST   /v1/accounts/repos                    Link repo (admin-only)
 GET    /v1/accounts/repos                    List linked repos
+
+POST   /v1/catalog/sync                      Upload catalog envelope (GitHub OIDC)
+GET    /v1/catalog/components                List visible catalog components
+GET    /v1/catalog/components/:id            Component detail
+GET    /v1/catalog/components/:id/history    Component sync/change history
+GET    /v1/catalog/components/:id/runs       Runs touching a component
+GET    /v1/catalog/components/:id/dependencies Component relations
 ```
 
 ---
@@ -173,6 +180,7 @@ Implementation specs for each component are in `spec/`:
 | `spec/09-cli-integration.md` | `orun --remote-state` client integration |
 | `spec/10-rate-limiting.md` | Rate limiting |
 | `spec/11-dashboard-ui.md` | Dashboard UI and browser OAuth flow |
+| `spec/12-catalog-index.md` | Catalog sync, storage, and query API |
 | `SCHEDULE.md` | Development schedule and delegation order |
 
 ---

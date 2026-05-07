@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": "12.2.1",
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11],
+  "current_task": "13",
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1"],
   "repo_health": "yellow",
-  "next_focus": "task-0012.2.1-link-auth-model-remediation",
+  "next_focus": "task-0013-dashboard-catalog-index-foundation",
   "last_verified": "2026-05-07",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -33,6 +33,11 @@
     "Task 0010 (CLI auth backend) verified PASS and merged as PR #27. Implements: browser OAuth loopback, backend-mediated GitHub device flow, Orun access/refresh tokens with SHA-256 hashed storage, refresh/logout endpoints, CLI session mutable route authorization, D1 migration 0003. 162/162 tests pass. Accepted residual risks: device endpoint rate limiting deferred (proposal at ai/proposals/task-0010-device-flow-rate-limiting.md), refresh token not rotated, no CLI session GC yet.",
     "Task 0011 (orun CLI auth + local remote-state sessions) verified PASS and merged as PR #83 in sourceplane/orun (squash commit 9f8beecf5b3a7fc72d77ad9331e0d8af02a2af66). Implements: orun auth login (browser loopback + device flow), auth status/logout/token, orun cloud link, credential storage (keychain + 0600 file fallback), and local remote-state token resolution using Orun CLI sessions with auto-refresh. GitHub Actions OIDC behavior unchanged. All Go tests pass (-race clean, vet clean). Accepted residual risks: (1) ORUN_TOKEN in code is position 2 (before CLI session) vs spec position 3 — safe and intentional, proposal at ai/proposals/task-0011-orun-token-precedence.md; (2) orun cloud link cannot create new backend repo links without prior dashboard setup — proposal at ai/proposals/task-0011-cloud-link-api.md; (3) cloud link --backend-url flag missing (workaround: ORUN_BACKEND_URL env var); (4) orun auth token --audience is display-only.",
     "Task 0012.2 (backend session repo link endpoint): PR #29 merged as 4981eef; follow-up commit 61f2ba8 ('fix: allow any CLI session to link a known repo slug') removed the allowedNamespaceIds check from handleLinkRepoFromSession. Verifier FAIL on 2026-05-07: spec/04-worker-api.md:96 still requires the check; no accepted proposal exists relaxing it; test accounts.test.ts:870-879 confirms any known slug succeeds regardless of JWT claims. Endpoint is live (401 unauth, 405 wrong-method, typed JSON). 185 tests pass, typecheck/CI green. Blocked on remediation task 0012.2.1.",
-    "Task 0012.3 (CLI local namespace auto-resolve): PR #85 in sourceplane/orun open (head 0a54b4f). CLI implementation is correct: auto-resolve via POST /v1/accounts/repos/link, cache-first, ORUN_TOKEN guard, GHA OIDC unaffected. All Go tests pass. Verifier BLOCKED on 2026-05-07 due to Task 0012.2 FAIL. Minor harness issue: run-local-harness.sh:150-158 still requires pre-linked repo (bypasses auto-resolve). Do not merge PR #85 until Task 0012.2 PASSes."
+    "Task 0012.3 (CLI local namespace auto-resolve): PR #85 in sourceplane/orun open (head 0a54b4f). CLI implementation is correct: auto-resolve via POST /v1/accounts/repos/link, cache-first, ORUN_TOKEN guard, GHA OIDC unaffected. All Go tests pass. Verifier BLOCKED on 2026-05-07 due to Task 0012.2 FAIL. Minor harness issue: run-local-harness.sh:150-158 still requires pre-linked repo (bypasses auto-resolve). Do not merge PR #85 until Task 0012.2 PASSes.",
+    "Task 0012.2.1 verified PASS and merged as PR #31 (4879f69): CLI sessions now use local:user:<githubUserId>:repo:<repoId> namespaces derived from account_repo_cache; canonical repo namespaces remain OIDC-only.",
+    "Task 0012.3.1 verified PASS and PR #85 merged: local remote-state auto-resolves through POST /v1/accounts/repos/link, rejects non-local backend responses, invalidates old canonical caches, and no longer surfaces the raw Session creates require namespaceId error.",
+    "Remaining repo-health yellow note: the original Task 0012 local conformance verifier report is FAIL and no task-0012.1 verifier report is present, although task-0012.1 implementer says it addressed those harness blockers. Re-verify before treating the whole local conformance phase as green.",
+    "Dashboard product architecture updated from orun-cloud-saas-conversations.tx: Orun Dashboard should become a Git-native software catalog plus CI intelligence layer, with Git as source of truth and Orun Cloud as index/history/graph/automation layer. Added spec/12-catalog-index.md and expanded spec/11-dashboard-ui.md.",
+    "Next dashboard development focus: Task 0013 catalog index foundation. Build backend/shared/client catalog contracts before a large dashboard UI rewrite."
   ]
 }

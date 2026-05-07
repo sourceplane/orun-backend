@@ -1,6 +1,8 @@
 # @orun/dashboard
 
-Static operational dashboard for orun-backend, deployed to Cloudflare Pages.
+Static Orun Dashboard for orun-backend, deployed to Cloudflare Pages.
+
+The current implemented slice is an operational run/job/log dashboard. The next product direction is catalog-first: a Git-native software catalog plus CI intelligence layer backed by catalog sync APIs in `spec/12-catalog-index.md` and the UI architecture in `spec/11-dashboard-ui.md`.
 
 ## Local Development
 
@@ -87,4 +89,5 @@ pnpm --filter @orun/dashboard exec wrangler pages deploy dist --project-name oru
 - OAuth fragments are stripped from browser history immediately after parsing
 - GitHub OAuth access tokens are never exposed to the dashboard
 - The dashboard uses only session-authenticated read endpoints
-- Mutable execution routes (claim/update/heartbeat) remain OIDC-only
+- Mutable execution routes (claim/update/heartbeat) remain OIDC or CLI-session only
+- Catalog sync writes are GitHub Actions OIDC-only; dashboard sessions read the catalog but do not publish canonical repo state
