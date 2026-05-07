@@ -171,6 +171,17 @@ describe("pollDeviceFlow", () => {
     expect(success.refreshToken).not.toBe(success._refreshTokenHash);
   });
 
+  it("includes namespace slugs with full_name for admin repos", async () => {
+    mockGitHubApis();
+
+    const result = await pollDeviceFlow("DCCODE", makeEnv());
+
+    expect("status" in result).toBe(false);
+    const success = result as Exclude<typeof result, { status: "pending" }>;
+    expect(success.namespaceSlugs).toBeDefined();
+    expect(success.namespaceSlugs).toContainEqual({ id: "500", slug: "deviceuser/repo" });
+  });
+
   it("throws when ORUN_SESSION_SECRET not set", async () => {
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ access_token: "gho_tok" }), { status: 200 }),

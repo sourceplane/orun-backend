@@ -485,15 +485,28 @@ Logout: `orun auth logout` revokes the backend refresh token and removes local c
 Token debug: `orun auth token --audience orun-backend` prints or copies a short-lived Orun access token only with explicit user intent.
 ```
 
+During `orun auth login` (both browser OAuth and device flow), the backend discovers all admin-accessible GitHub repos and upserts their `(namespace_id, namespace_slug)` pairs into the `namespaces` table. This means the CLI does not need to forward a GitHub access token at any later point — namespace resolution is available server-side once the user has logged in.
+
 `orun cloud link` should compose local auth plus repository detection:
 
 ```text
 1. Ensure the user is logged in, starting `orun auth login` if needed.
-2. Detect the GitHub remote for the workspace.
-3. Verify the GitHub repo namespace is present in the Orun session or linked account.
-4. Persist backend URL and repo linkage in local orun config.
+2. Detect the GitHub remote for the workspace (e.g., git remote get-url origin).
+3. Call POST /v1/accounts/repos/link with { repoFullName: "owner/repo" } using the CLI session token.
+   - The backend resolves the slug to a namespace ID from the session-discovered namespace slugs.
+   - No GitHub OAuth access token or PAT is required or used.
+4. Persist the returned namespaceId and backend URL in local orun config (~/.orun/config.yaml).
 5. Print a concise success summary.
 ```
+
+**Namespace resolution for local remote-state:**
+
+- GitHub Actions: namespace identity comes from OIDC claims (`repository_id`, `repository`).
+- Local CLI: namespace identity is resolved by calling `POST /v1/accounts/repos/link` with `repoFullName` derived from the current Git remote. The backend matches the slug against namespace rows written during login. The CLI never holds or forwards GitHub OAuth tokens.
+
+If the slug is not found (i.e., the user logged in before the backend deployed this slug-upsert feature), the endpoint returns a `NOT_FOUND` error with guidance to re-run `orun auth login`.
+
+**Previously**: `orun cloud link` required the repo to be pre-linked via the Orun dashboard, and would fail with "link it in Orun Cloud first" for new repos. This limitation is removed by the `POST /v1/accounts/repos/link` endpoint.
 
 Credential storage:
 

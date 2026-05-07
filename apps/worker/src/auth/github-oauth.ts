@@ -237,14 +237,19 @@ function parseLinkNext(link: string | null): string | null {
   return match ? match[1] : null;
 }
 
-async function fetchAdminRepos(accessToken: string): Promise<string[]> {
+export interface NamespaceRef {
+  id: string;
+  slug: string;
+}
+
+async function fetchAdminRepos(accessToken: string): Promise<NamespaceRef[]> {
   const repos = await fetchAllPages<GitHubRepoPermission>(
     `${GITHUB_API_BASE}/user/repos?type=all&per_page=100`,
     accessToken,
   );
   return repos
     .filter((r) => r.permissions?.admin)
-    .map((r) => String(r.id));
+    .map((r) => ({ id: String(r.id), slug: r.full_name }));
 }
 
 interface OrgMembership {
@@ -252,14 +257,14 @@ interface OrgMembership {
   role: string;
 }
 
-async function fetchOrgAdminRepoIds(accessToken: string): Promise<string[]> {
+async function fetchOrgAdminRepos(accessToken: string): Promise<NamespaceRef[]> {
   const memberships = await fetchAllPages<OrgMembership>(
     `${GITHUB_API_BASE}/user/memberships/orgs?per_page=100`,
     accessToken,
   );
 
   const adminOrgs = memberships.filter((m) => m.role === "admin");
-  const ids: string[] = [];
+  const items: NamespaceRef[] = [];
 
   for (const org of adminOrgs) {
     const repos = await fetchAllPages<GitHubRepoPermission>(
@@ -267,11 +272,11 @@ async function fetchOrgAdminRepoIds(accessToken: string): Promise<string[]> {
       accessToken,
     );
     for (const r of repos) {
-      ids.push(String(r.id));
+      items.push({ id: String(r.id), slug: r.full_name });
     }
   }
 
-  return ids;
+  return items;
 }
 
 export interface OAuthCallbackResult {
@@ -279,6 +284,7 @@ export interface OAuthCallbackResult {
   sessionKind: "dashboard" | "cli";
   githubLogin: string;
   allowedNamespaceIds: string[];
+  namespaceSlugs: NamespaceRef[];
   returnTo?: string;
   refreshToken?: string;
   refreshExpiresAt?: string;
@@ -321,12 +327,17 @@ export async function handleGitHubOAuthCallback(
   const accessToken = await exchangeCodeForToken(code, env, redirectUri);
   const user = await fetchGitHubUser(accessToken);
 
-  const [repoIds, orgRepoIds] = await Promise.all([
+  const [repoItems, orgRepoItems] = await Promise.all([
     fetchAdminRepos(accessToken),
-    fetchOrgAdminRepoIds(accessToken),
+    fetchOrgAdminRepos(accessToken),
   ]);
 
-  const allowedNamespaceIds = [...new Set([...repoIds, ...orgRepoIds])];
+  const seen = new Map<string, string>();
+  for (const r of [...repoItems, ...orgRepoItems]) {
+    if (!seen.has(r.id)) seen.set(r.id, r.slug);
+  }
+  const namespaceSlugs: NamespaceRef[] = Array.from(seen.entries()).map(([id, slug]) => ({ id, slug }));
+  const allowedNamespaceIds = namespaceSlugs.map((r) => r.id);
   const sessionKind: "dashboard" | "cli" = isCli ? "cli" : "dashboard";
 
   const sessionToken = await issueSessionToken(
@@ -339,6 +350,7 @@ export async function handleGitHubOAuthCallback(
     sessionKind,
     githubLogin: user.login,
     allowedNamespaceIds,
+    namespaceSlugs,
     returnTo: statePayload.returnTo,
   };
 

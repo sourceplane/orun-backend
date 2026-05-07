@@ -62,9 +62,42 @@ All endpoints are prefixed `/v1/`. The Worker returns JSON for all responses.
 |--------|------|------|-------------|
 | `POST` | `/v1/accounts` | Session | Create a orun account |
 | `GET` | `/v1/accounts/me` | Session | Get current account info |
-| `POST` | `/v1/accounts/repos` | Session | Link a GitHub repo (admin-only) |
+| `POST` | `/v1/accounts/repos` | Session + `X-GitHub-Access-Token` | Link a GitHub repo (admin-only, dashboard/admin flow) |
+| `POST` | `/v1/accounts/repos/link` | CLI Session | Resolve and link a repo by slug using CLI session namespace access (no GitHub token required) |
 | `GET` | `/v1/accounts/repos` | Session | List linked repos |
 | `DELETE` | `/v1/accounts/repos/:namespaceId` | Session | Unlink a repo |
+
+#### `POST /v1/accounts/repos/link`
+
+Allows a local Orun CLI session to link/resolve an allowed GitHub repo to a namespace ID without sending a GitHub OAuth access token. This endpoint closes the bootstrapping gap for `orun run --remote-state` on developer machines.
+
+**Request**:
+```http
+POST /v1/accounts/repos/link
+Authorization: Bearer <orun-cli-session-token>
+Content-Type: application/json
+
+{ "repoFullName": "owner/repo" }
+```
+
+**Response (200)**:
+```json
+{
+  "namespaceId": "...",
+  "namespaceSlug": "owner/repo",
+  "linkedAt": "..."
+}
+```
+
+**Behavior**:
+- Requires `sessionKind="cli"`. Dashboard sessions are rejected with `FORBIDDEN`.
+- Validates `repoFullName` format (`owner/repo`).
+- Looks up `repoFullName` in the `namespaces` table (populated during CLI auth).
+- Requires the resolved namespace ID to be in `allowedNamespaceIds` from the session token.
+- Creates or reuses the `accounts` and `account_repos` rows. Idempotent.
+- If the slug is unknown (i.e., the user has an old session token from before this backend update), returns `NOT_FOUND` with guidance to re-run `orun auth login`.
+
+The existing `POST /v1/accounts/repos` with `X-GitHub-Access-Token` is unchanged and still used by dashboard/admin flows.
 
 ---
 

@@ -263,6 +263,42 @@ describe("handleGitHubOAuthCallback", () => {
     expect(unique.size).toBe(result.allowedNamespaceIds.length);
   });
 
+  it("includes namespace slugs with full_name for admin repos", async () => {
+    const state = await getValidState();
+    vi.restoreAllMocks();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    mockGitHubApis();
+
+    const req = makeRequest(`https://api.orun.dev/v1/auth/github/callback?code=testcode&state=${state}`);
+    const result = await handleGitHubOAuthCallback(req, makeEnv());
+
+    expect(result.namespaceSlugs).toBeDefined();
+    expect(result.namespaceSlugs).toContainEqual({ id: "100", slug: "org/repo1" });
+    expect(result.namespaceSlugs).toContainEqual({ id: "300", slug: "org/repo3" });
+    expect(result.namespaceSlugs.find((s) => s.id === "200")).toBeUndefined();
+  });
+
+  it("deduplicates namespace slugs across personal and org repos", async () => {
+    const state = await getValidState();
+    vi.restoreAllMocks();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    mockGitHubApis(
+      { login: "admin", id: 1 },
+      [{ id: 100, full_name: "org/repo1", permissions: { admin: true } }],
+      [{ organization: { login: "myorg" }, role: "admin" }],
+      { myorg: [{ id: 100, full_name: "org/repo1" }, { id: 400, full_name: "myorg/newrepo" }] },
+    );
+
+    const req = makeRequest(`https://api.orun.dev/v1/auth/github/callback?code=testcode&state=${state}`);
+    const result = await handleGitHubOAuthCallback(req, makeEnv());
+
+    const unique = new Set(result.namespaceSlugs.map((s) => s.id));
+    expect(unique.size).toBe(result.namespaceSlugs.length);
+    expect(result.namespaceSlugs).toContainEqual({ id: "100", slug: "org/repo1" });
+    expect(result.namespaceSlugs).toContainEqual({ id: "400", slug: "myorg/newrepo" });
+  });
+
   it("handles token exchange failure", async () => {
     const state = await getValidState();
     vi.restoreAllMocks();

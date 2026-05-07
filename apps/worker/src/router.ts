@@ -6,7 +6,7 @@ import { handleAuthGitHub, handleAuthGitHubCallback, handleCliDeviceStart, handl
 import { handleCreateRun, handleListRuns, handleGetRun } from "./handlers/runs";
 import { handleClaimJob, handleUpdateJob, handleHeartbeat, handleRunnable, handleListJobs, handleJobStatus } from "./handlers/jobs";
 import { handleUploadLog, handleGetLog } from "./handlers/logs";
-import { handleCreateAccount, handleGetAccount, handleLinkRepo, handleListLinkedRepos, handleUnlinkRepo } from "./handlers/accounts";
+import { handleCreateAccount, handleGetAccount, handleLinkRepo, handleListLinkedRepos, handleUnlinkRepo, handleLinkRepoFromSession } from "./handlers/accounts";
 import { checkRateLimit } from "./rate-limit";
 
 interface RouteContext {
@@ -46,6 +46,7 @@ const routes: Route[] = [
   route("POST", "/v1/auth/cli/logout", handleCliLogout, "none", false),
   route("POST", "/v1/accounts", handleCreateAccount, "session", true),
   route("GET", "/v1/accounts/me", handleGetAccount, "session", true),
+  route("POST", "/v1/accounts/repos/link", handleLinkRepoFromSession, "session", true),
   route("POST", "/v1/accounts/repos", handleLinkRepo, "session", true),
   route("GET", "/v1/accounts/repos", handleListLinkedRepos, "session", true),
   route("DELETE", "/v1/accounts/repos/:namespaceId", handleUnlinkRepo, "session", true),
