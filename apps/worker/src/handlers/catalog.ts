@@ -143,18 +143,20 @@ export async function handleCatalogSync(rc: RouteContext): Promise<Response> {
     );
   }
 
-  // Validate all component paths
-  if (Array.isArray(envelope.components)) {
-    for (const cs of envelope.components) {
-      if (cs.component?.path !== undefined) {
-        validateComponentPath(cs.component.path);
-      }
-      if (!cs.component?.id || typeof cs.component.id !== "string") {
-        throw new OrunError("INVALID_REQUEST", "component.id is required for each component");
-      }
-      if (!cs.component?.name || typeof cs.component.name !== "string") {
-        throw new OrunError("INVALID_REQUEST", "component.name is required for each component");
-      }
+  // Validate components array and required fields
+  if (!Array.isArray(envelope.components)) {
+    throw new OrunError("INVALID_REQUEST", "components must be an array");
+  }
+  for (const cs of envelope.components) {
+    if (typeof cs.component?.path !== "string") {
+      throw new OrunError("INVALID_REQUEST", "component.path is required and must be a string");
+    }
+    validateComponentPath(cs.component.path);
+    if (!cs.component?.id || typeof cs.component.id !== "string") {
+      throw new OrunError("INVALID_REQUEST", "component.id is required for each component");
+    }
+    if (!cs.component?.name || typeof cs.component.name !== "string") {
+      throw new OrunError("INVALID_REQUEST", "component.name is required for each component");
     }
   }
 

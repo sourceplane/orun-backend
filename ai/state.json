@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": "13",
+  "current_task": "13.1",
   "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1"],
   "repo_health": "yellow",
-  "next_focus": "task-0013-dashboard-catalog-index-foundation",
+  "next_focus": "task-0013.1-catalog-sync-validation-remediation",
   "last_verified": "2026-05-07",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -38,6 +38,7 @@
     "Task 0012.3.1 verified PASS and PR #85 merged: local remote-state auto-resolves through POST /v1/accounts/repos/link, rejects non-local backend responses, invalidates old canonical caches, and no longer surfaces the raw Session creates require namespaceId error.",
     "Remaining repo-health yellow note: the original Task 0012 local conformance verifier report is FAIL and no task-0012.1 verifier report is present, although task-0012.1 implementer says it addressed those harness blockers. Re-verify before treating the whole local conformance phase as green.",
     "Dashboard product architecture updated from orun-cloud-saas-conversations.tx: Orun Dashboard should become a Git-native software catalog plus CI intelligence layer, with Git as source of truth and Orun Cloud as index/history/graph/automation layer. Added spec/12-catalog-index.md and expanded spec/11-dashboard-ui.md.",
-    "Next dashboard development focus: Task 0013 catalog index foundation. Build backend/shared/client catalog contracts before a large dashboard UI rewrite."
+    "Next dashboard development focus: Task 0013 catalog index foundation. Build backend/shared/client catalog contracts before a large dashboard UI rewrite.",
+    "Task 0013 verifier FAIL on 2026-05-07: implementation and CI are mostly green, but POST /v1/catalog/sync accepts envelopes with missing component.path, returns 202, and then fails async normalization against catalog_components.repo_path NOT NULL. Report written to ai/reports/task-0013-verifier.md. Next move: Task 0013.1 small validation remediation."
   ]
 }

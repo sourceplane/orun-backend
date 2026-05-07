@@ -287,6 +287,46 @@ describe("Catalog API", () => {
       expect(resp.status).toBe(400);
     });
 
+    it("rejects component with missing path — returns 400 INVALID_REQUEST without scheduling normalization", async () => {
+      const envelope = makeValidEnvelope();
+      delete (envelope.components[0].component as Record<string, unknown>).path;
+      const waitUntilSpy = vi.spyOn(ctx, "waitUntil");
+      const resp = await routeRequest(req("POST", "/v1/catalog/sync", envelope), env, ctx);
+      expect(resp.status).toBe(400);
+      const data = await resp.json() as { code: string };
+      expect(data.code).toBe("INVALID_REQUEST");
+      expect(waitUntilSpy).not.toHaveBeenCalled();
+    });
+
+    it("rejects component with non-string path — returns 400 INVALID_REQUEST without scheduling normalization", async () => {
+      const envelope = makeValidEnvelope();
+      (envelope.components[0].component as unknown as Record<string, unknown>).path = 42;
+      const waitUntilSpy = vi.spyOn(ctx, "waitUntil");
+      const resp = await routeRequest(req("POST", "/v1/catalog/sync", envelope), env, ctx);
+      expect(resp.status).toBe(400);
+      const data = await resp.json() as { code: string };
+      expect(data.code).toBe("INVALID_REQUEST");
+      expect(waitUntilSpy).not.toHaveBeenCalled();
+    });
+
+    it("rejects non-array components — returns 400 INVALID_REQUEST", async () => {
+      const envelope = makeValidEnvelope({
+        components: "not-an-array" as unknown as CatalogSyncEnvelope["components"],
+      });
+      const resp = await routeRequest(req("POST", "/v1/catalog/sync", envelope), env, ctx);
+      expect(resp.status).toBe(400);
+      const data = await resp.json() as { code: string };
+      expect(data.code).toBe("INVALID_REQUEST");
+    });
+
+    it("accepts valid envelope with empty components array", async () => {
+      const envelope = makeValidEnvelope({ components: [] });
+      const resp = await routeRequest(req("POST", "/v1/catalog/sync", envelope), env, ctx);
+      expect(resp.status).toBe(202);
+      const data = await resp.json() as { componentCount: number };
+      expect(data.componentCount).toBe(0);
+    });
+
     it("is idempotent for duplicate uploadId — returns 202 without error", async () => {
       env = makeEnv({ uploadExists: true });
       const resp = await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope({ uploadId: "upl-dup" })), env, ctx);
