@@ -5,7 +5,7 @@ import { startDeviceFlow, pollDeviceFlow } from "../auth/device-flow";
 import { issueSessionToken } from "../auth/session";
 import { D1Index } from "@orun/storage";
 import { OrunError } from "../auth/errors";
-import { getOrCreateAccount, upsertBulkNamespaceSlugs } from "./accounts";
+import { getOrCreateAccount, upsertBulkNamespaceSlugs, upsertAccountRepoCache, getAccountByLogin } from "./accounts";
 import { json } from "../http";
 
 interface RouteContext {
@@ -30,7 +30,7 @@ export async function handleAuthGitHubCallback(rc: RouteContext): Promise<Respon
   }
 
   if (result.sessionKind === "cli" && result.refreshToken && result._refreshTokenHash) {
-    const account = await getOrCreateAccount(rc.env.DB, result.githubLogin);
+    const account = await getOrCreateAccount(rc.env.DB, result.githubLogin, undefined, result.githubUserId);
     const db = new D1Index(rc.env.DB);
     const expiresAt = result.refreshExpiresAt ?? new Date(Date.now() + CLI_REFRESH_TTL_SECONDS * 1000).toISOString();
     await db.createCliSession({
@@ -42,6 +42,7 @@ export async function handleAuthGitHubCallback(rc: RouteContext): Promise<Respon
       expiresAt,
       userAgent: rc.request.headers.get("User-Agent") ?? undefined,
     });
+    await upsertAccountRepoCache(rc.env.DB, account.account_id, result.namespaceSlugs);
   }
 
   if (result.returnTo) {
@@ -104,7 +105,7 @@ export async function handleCliDevicePoll(rc: RouteContext): Promise<Response> {
     await upsertBulkNamespaceSlugs(rc.env.DB, successResult.namespaceSlugs);
   }
 
-  const account = await getOrCreateAccount(rc.env.DB, successResult.githubLogin);
+  const account = await getOrCreateAccount(rc.env.DB, successResult.githubLogin, undefined, successResult.githubUserId);
   const db = new D1Index(rc.env.DB);
   const expiresAt = successResult.refreshExpiresAt;
   await db.createCliSession({
@@ -116,6 +117,7 @@ export async function handleCliDevicePoll(rc: RouteContext): Promise<Response> {
     expiresAt,
     userAgent: rc.request.headers.get("User-Agent") ?? undefined,
   });
+  await upsertAccountRepoCache(rc.env.DB, account.account_id, successResult.namespaceSlugs);
 
   return json({
     accessToken: successResult.accessToken,
@@ -163,12 +165,16 @@ export async function handleCliToken(rc: RouteContext): Promise<Response> {
 
   await db.markCliSessionUsed(session.sessionId, now);
 
+  const accountRow = await getAccountByLogin(rc.env.DB, session.githubLogin);
+  const githubUserId = accountRow?.github_user_id ?? undefined;
+
   const accessToken = await issueSessionToken(
     {
       sub: session.githubLogin,
       allowedNamespaceIds: session.allowedNamespaceIds,
       sessionKind: "cli",
       tokenUse: "access",
+      ...(githubUserId ? { githubUserId } : {}),
     },
     sessionSecret,
   );

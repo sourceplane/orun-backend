@@ -17,6 +17,7 @@ export type RequestContext =
       namespace: null;
       allowedNamespaceIds: string[];
       actor: string;
+      githubUserId?: string;
     }
   | {
       type: "deploy";
@@ -77,6 +78,7 @@ export async function authenticate(
     namespace: null,
     allowedNamespaceIds: claims.allowedNamespaceIds,
     actor: claims.sub,
+    githubUserId: claims.githubUserId,
   };
 }
 

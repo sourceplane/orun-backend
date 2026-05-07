@@ -21,6 +21,9 @@ function assertMutableAccess(authCtx: RequestContext): void {
   throw new OrunError("FORBIDDEN", "Dashboard sessions may not use mutable coordination routes");
 }
 
+// For OIDC: use the verified OIDC namespace directly.
+// For CLI session: find the run only under namespaces that start with the
+// caller's local prefix so a session can never reach a canonical repo namespace.
 async function resolveNamespaceForMutableAccess(
   authCtx: RequestContext,
   env: Env,
@@ -29,13 +32,23 @@ async function resolveNamespaceForMutableAccess(
   if (authCtx.type === "oidc") {
     return authCtx.namespace.namespaceId;
   }
+  if (authCtx.type !== "session") {
+    throw new OrunError("FORBIDDEN", "Access denied");
+  }
+  const githubUserId = authCtx.githubUserId;
+  if (!githubUserId) {
+    throw new OrunError(
+      "FORBIDDEN",
+      "CLI session is missing GitHub user ID. Re-run `orun auth login` to obtain a refreshed token.",
+    );
+  }
+  const localPrefix = `local:user:${githubUserId}:repo:`;
   const db = new D1Index(env.DB);
   const resolved = await resolveSessionNamespaceIds(authCtx, env.DB);
-  for (const nsId of resolved) {
+  const localNamespaces = resolved.filter((id) => id.startsWith(localPrefix));
+  for (const nsId of localNamespaces) {
     const run = await db.getRun(nsId, runId);
-    if (run) {
-      return nsId;
-    }
+    if (run) return nsId;
   }
   throw new OrunError("NOT_FOUND", "Run not found or access denied");
 }

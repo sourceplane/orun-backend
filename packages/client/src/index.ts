@@ -1,4 +1,4 @@
-import type { Run, Job, ApiError } from "@orun/types";
+import type { Run, Job, ApiError, LinkRepoFromSessionResponse } from "@orun/types";
 
 export class OrunClientError extends Error {
   public readonly status: number;
@@ -137,8 +137,8 @@ export class OrunClient {
     return resp.json() as Promise<{ namespaceId: string; namespaceSlug: string; linkedAt: string }>;
   }
 
-  async linkRepoFromSession(repoFullName: string): Promise<{ namespaceId: string; namespaceSlug: string; linkedAt: string }> {
-    return this.request("POST", "/v1/accounts/repos/link", { body: { repoFullName } }) as Promise<{ namespaceId: string; namespaceSlug: string; linkedAt: string }>;
+  async linkRepoFromSession(repoFullName: string): Promise<LinkRepoFromSessionResponse> {
+    return this.request("POST", "/v1/accounts/repos/link", { body: { repoFullName } }) as Promise<LinkRepoFromSessionResponse>;
   }
 
   async listRuns(params?: { limit?: number; offset?: number }): Promise<{ runs: Run[] }> {

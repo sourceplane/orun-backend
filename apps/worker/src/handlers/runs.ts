@@ -6,7 +6,7 @@ import { json } from "../http";
 import { getCoordinator, coordinatorFetch } from "../coordinator";
 import { D1Index } from "@orun/storage";
 import { R2Storage } from "@orun/storage";
-import { resolveSessionNamespaceIds } from "./accounts";
+import { resolveSessionNamespaceIds, getOrCreateAccount, lookupRepoInAccountCache, lookupRepoInAccountCacheByRepoId } from "./accounts";
 
 interface RouteContext {
   request: Request;
@@ -14,13 +14,6 @@ interface RouteContext {
   ctx: ExecutionContext;
   params: Record<string, string>;
   authCtx: RequestContext;
-}
-
-function resolveNamespace(rc: RouteContext): { namespaceId: string; namespaceSlug: string } {
-  if (rc.authCtx.type === "oidc") {
-    return { namespaceId: rc.authCtx.namespace.namespaceId, namespaceSlug: rc.authCtx.namespace.namespaceSlug };
-  }
-  throw new OrunError("FORBIDDEN", "Session creates require namespaceId in body");
 }
 
 export function assertNamespaceAccess(authCtx: RequestContext, namespaceId: string): void {
@@ -37,6 +30,19 @@ export function assertNamespaceAccess(authCtx: RequestContext, namespaceId: stri
     return;
   }
   throw new OrunError("FORBIDDEN", "Deploy token not accepted");
+}
+
+// Return the local namespace prefix for a CLI session. Throws if the session
+// lacks githubUserId (requires re-login).
+function requireLocalNamespacePrefix(authCtx: RequestContext & { type: "session" }): string {
+  const githubUserId = authCtx.githubUserId;
+  if (!githubUserId) {
+    throw new OrunError(
+      "FORBIDDEN",
+      "CLI session is missing GitHub user ID. Re-run `orun auth login` to obtain a refreshed token.",
+    );
+  }
+  return `local:user:${githubUserId}:repo:`;
 }
 
 export async function handleCreateRun(rc: RouteContext): Promise<Response> {
@@ -71,24 +77,62 @@ export async function handleCreateRun(rc: RouteContext): Promise<Response> {
       throw new OrunError("FORBIDDEN", "Namespace mismatch");
     }
   } else if (rc.authCtx.type === "session") {
+    if (rc.authCtx.sessionKind !== "cli") {
+      throw new OrunError("FORBIDDEN", "Dashboard sessions may not create runs");
+    }
+
+    const localPrefix = requireLocalNamespacePrefix(rc.authCtx);
+    const githubUserId = rc.authCtx.githubUserId!;
+    const repoFullName = body.repoFullName as string | undefined;
     const bodyNs = body.namespaceId as string | undefined;
-    if (!bodyNs) {
-      throw new OrunError("INVALID_REQUEST", "Session creates require namespaceId");
+
+    if (bodyNs && !bodyNs.startsWith("local:")) {
+      throw new OrunError(
+        "FORBIDDEN",
+        "Session tokens may not create runs under canonical repo namespaces. Use an OIDC token for CI/workload runs.",
+      );
     }
-    const resolved = await resolveSessionNamespaceIds(rc.authCtx, rc.env.DB);
-    if (!resolved.includes(bodyNs)) {
-      throw new OrunError("FORBIDDEN", "Namespace access denied");
+
+    const account = await getOrCreateAccount(rc.env.DB, rc.authCtx.actor);
+
+    if (repoFullName) {
+      // Resolve namespace from account-scoped repo cache using repoFullName.
+      const cached = await lookupRepoInAccountCache(rc.env.DB, account.account_id, repoFullName);
+      if (!cached) {
+        throw new OrunError(
+          "NOT_FOUND",
+          `Repository ${repoFullName} is not in your repo cache. Re-run \`orun auth login\` to refresh.`,
+        );
+      }
+      namespaceId = `${localPrefix}${cached.repo_id}`;
+      namespaceSlug = `local:${rc.authCtx.actor}/${repoFullName}`;
+      if (bodyNs && bodyNs !== namespaceId) {
+        throw new OrunError("FORBIDDEN", "Namespace mismatch");
+      }
+    } else if (bodyNs) {
+      // Client provided a local namespaceId — verify it matches session identity.
+      if (!bodyNs.startsWith(localPrefix)) {
+        throw new OrunError(
+          "FORBIDDEN",
+          "Namespace does not belong to this CLI session. Re-run `orun auth login` and `orun cloud link`.",
+        );
+      }
+      const repoId = bodyNs.slice(localPrefix.length);
+      const cached = await lookupRepoInAccountCacheByRepoId(rc.env.DB, account.account_id, repoId);
+      if (!cached) {
+        throw new OrunError(
+          "NOT_FOUND",
+          "Local namespace not found in your repo cache. Re-run `orun auth login`.",
+        );
+      }
+      namespaceId = bodyNs;
+      namespaceSlug = `local:${rc.authCtx.actor}/${cached.repo_full_name}`;
+    } else {
+      throw new OrunError(
+        "INVALID_REQUEST",
+        "CLI session requires repoFullName or a local namespaceId (local:user:...) to create a run.",
+      );
     }
-    namespaceId = bodyNs;
-    const db = new D1Index(rc.env.DB);
-    const nsRow = await rc.env.DB
-      .prepare("SELECT namespace_slug FROM namespaces WHERE namespace_id = ?1")
-      .bind(namespaceId)
-      .first<{ namespace_slug: string }>();
-    if (!nsRow) {
-      throw new OrunError("NOT_FOUND", "Namespace not found");
-    }
-    namespaceSlug = nsRow.namespace_slug;
   } else {
     throw new OrunError("FORBIDDEN", "Deploy token not accepted");
   }

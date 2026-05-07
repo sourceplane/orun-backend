@@ -2,6 +2,7 @@ import type { Env } from "@orun/types";
 import type { RequestContext } from "../auth";
 import { OrunError } from "../auth/errors";
 import { json } from "../http";
+import type { NamespaceRef } from "../auth/github-oauth";
 
 interface RouteContext {
   request: Request;
@@ -14,6 +15,7 @@ interface RouteContext {
 interface AccountRow {
   account_id: string;
   github_login: string;
+  github_user_id: string | null;
   created_at: string;
 }
 
@@ -21,6 +23,13 @@ interface LinkedRepoRow {
   namespace_id: string;
   namespace_slug: string;
   linked_at: string;
+}
+
+interface AccountRepoCacheRow {
+  account_id: string;
+  repo_id: string;
+  repo_full_name: string;
+  last_seen_at: string;
 }
 
 // ─── D1 Helpers ─────────────────────────────────────────────────────────────
@@ -45,20 +54,66 @@ export async function upsertBulkNamespaceSlugs(
   }
 }
 
-async function lookupNamespaceBySlug(
+// Populate the account-scoped repo cache from the repos visible during login.
+// This is the authoritative source for CLI local namespace resolution.
+export async function upsertAccountRepoCache(
   db: D1Database,
-  slug: string,
-): Promise<{ namespace_id: string; namespace_slug: string } | null> {
+  accountId: string,
+  repos: NamespaceRef[],
+  now?: string,
+): Promise<void> {
+  const ts = now ?? new Date().toISOString();
+  for (const { id, slug } of repos) {
+    await db
+      .prepare(
+        `INSERT INTO account_repo_cache (account_id, repo_id, repo_full_name, last_seen_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(account_id, repo_id) DO UPDATE SET
+           repo_full_name = excluded.repo_full_name,
+           last_seen_at = excluded.last_seen_at`,
+      )
+      .bind(accountId, id, slug, ts)
+      .run();
+  }
+}
+
+// Look up a repo in the caller's account-scoped cache by full name.
+export async function lookupRepoInAccountCache(
+  db: D1Database,
+  accountId: string,
+  repoFullName: string,
+): Promise<AccountRepoCacheRow | null> {
   return db
-    .prepare("SELECT namespace_id, namespace_slug FROM namespaces WHERE namespace_slug = ?1")
-    .bind(slug)
-    .first<{ namespace_id: string; namespace_slug: string }>();
+    .prepare(
+      `SELECT account_id, repo_id, repo_full_name, last_seen_at
+       FROM account_repo_cache
+       WHERE account_id = ?1 AND repo_full_name = ?2`,
+    )
+    .bind(accountId, repoFullName)
+    .first<AccountRepoCacheRow>();
+}
+
+// Look up a repo in the caller's account-scoped cache by numeric repo ID.
+export async function lookupRepoInAccountCacheByRepoId(
+  db: D1Database,
+  accountId: string,
+  repoId: string,
+): Promise<AccountRepoCacheRow | null> {
+  return db
+    .prepare(
+      `SELECT account_id, repo_id, repo_full_name, last_seen_at
+       FROM account_repo_cache
+       WHERE account_id = ?1 AND repo_id = ?2`,
+    )
+    .bind(accountId, repoId)
+    .first<AccountRepoCacheRow>();
 }
 
 export async function getOrCreateAccount(
   db: D1Database,
   githubLogin: string,
   now?: string,
+  githubUserId?: string,
 ): Promise<AccountRow> {
   const ts = now ?? new Date().toISOString();
   const accountId = crypto.randomUUID();
@@ -70,8 +125,18 @@ export async function getOrCreateAccount(
     )
     .bind(accountId, githubLogin, ts)
     .run();
+
+  if (githubUserId) {
+    await db
+      .prepare(
+        `UPDATE accounts SET github_user_id = ?1 WHERE github_login = ?2`,
+      )
+      .bind(githubUserId, githubLogin)
+      .run();
+  }
+
   const row = await db
-    .prepare("SELECT account_id, github_login, created_at FROM accounts WHERE github_login = ?1")
+    .prepare("SELECT account_id, github_login, github_user_id, created_at FROM accounts WHERE github_login = ?1")
     .bind(githubLogin)
     .first<AccountRow>();
   if (!row) throw new OrunError("INTERNAL_ERROR", "Failed to create account");
@@ -83,7 +148,7 @@ export async function getAccountByLogin(
   githubLogin: string,
 ): Promise<AccountRow | null> {
   return db
-    .prepare("SELECT account_id, github_login, created_at FROM accounts WHERE github_login = ?1")
+    .prepare("SELECT account_id, github_login, github_user_id, created_at FROM accounts WHERE github_login = ?1")
     .bind(githubLogin)
     .first<AccountRow>();
 }
@@ -112,17 +177,19 @@ export async function linkRepo(
   namespaceSlug: string,
   linkedBy: string,
   now?: string,
+  namespaceKind?: "repo" | "local",
 ): Promise<LinkedRepoRow> {
   const ts = now ?? new Date().toISOString();
+  const kind = namespaceKind ?? "repo";
   await db
     .prepare(
-      `INSERT INTO namespaces (namespace_id, namespace_slug, last_seen_at)
-       VALUES (?1, ?2, ?3)
+      `INSERT INTO namespaces (namespace_id, namespace_slug, namespace_kind, last_seen_at)
+       VALUES (?1, ?2, ?3, ?4)
        ON CONFLICT(namespace_id) DO UPDATE SET
          namespace_slug = excluded.namespace_slug,
          last_seen_at = excluded.last_seen_at`,
     )
-    .bind(namespaceId, namespaceSlug, ts)
+    .bind(namespaceId, namespaceSlug, kind, ts)
     .run();
   await db
     .prepare(
@@ -371,12 +438,30 @@ export async function handleUnlinkRepo(rc: RouteContext): Promise<Response> {
   return json({ ok: true });
 }
 
+// Derive the local namespace ID from immutable identifiers. The format is
+// intentionally prefixed so it can never alias a numeric canonical repo ID.
+function deriveLocalNamespaceId(githubUserId: string, repoId: string): string {
+  return `local:user:${githubUserId}:repo:${repoId}`;
+}
+
+function deriveLocalNamespaceSlug(githubLogin: string, repoFullName: string): string {
+  return `local:${githubLogin}/${repoFullName}`;
+}
+
 export async function handleLinkRepoFromSession(rc: RouteContext): Promise<Response> {
   if (rc.authCtx.type !== "session") {
     throw new OrunError("FORBIDDEN", "Session authentication required");
   }
   if (rc.authCtx.sessionKind !== "cli") {
     throw new OrunError("FORBIDDEN", "CLI session required for this endpoint");
+  }
+
+  const githubUserId = rc.authCtx.githubUserId;
+  if (!githubUserId) {
+    throw new OrunError(
+      "FORBIDDEN",
+      "CLI session is missing GitHub user ID. Re-run `orun auth login` to obtain a refreshed token.",
+    );
   }
 
   let body: Record<string, unknown>;
@@ -392,26 +477,41 @@ export async function handleLinkRepoFromSession(rc: RouteContext): Promise<Respo
   }
   validateRepoFullName(rawRepoFullName);
 
-  const ns = await lookupNamespaceBySlug(rc.env.DB, rawRepoFullName);
-  if (!ns) {
+  // Account must exist; create it if this is the user's first call.
+  const account = await getOrCreateAccount(rc.env.DB, rc.authCtx.actor);
+
+  // Resolve the repo exclusively from the caller's account-scoped repo cache,
+  // populated during GitHub OAuth/device login. This prevents a user from
+  // claiming a namespace for a repo they never authenticated access to.
+  const cached = await lookupRepoInAccountCache(rc.env.DB, account.account_id, rawRepoFullName);
+  if (!cached) {
     throw new OrunError(
       "NOT_FOUND",
-      `Repository ${rawRepoFullName} is not known to this backend. Re-run \`orun auth login\` to refresh your namespace list.`,
+      `Repository ${rawRepoFullName} is not in your repo cache. ` +
+        `Re-run \`orun auth login\` to refresh your repo list, ` +
+        `or check that your GitHub account has access to this repository.`,
     );
   }
 
-  const account = await getOrCreateAccount(rc.env.DB, rc.authCtx.actor);
+  const namespaceId = deriveLocalNamespaceId(githubUserId, cached.repo_id);
+  const namespaceSlug = deriveLocalNamespaceSlug(rc.authCtx.actor, rawRepoFullName);
+
   const link = await linkRepo(
     rc.env.DB,
     account.account_id,
-    ns.namespace_id,
-    ns.namespace_slug,
+    namespaceId,
+    namespaceSlug,
     rc.authCtx.actor,
+    undefined,
+    "local",
   );
 
   return json({
+    namespaceKind: "local",
     namespaceId: link.namespace_id,
     namespaceSlug: link.namespace_slug,
+    repoId: cached.repo_id,
+    repoFullName: rawRepoFullName,
     linkedAt: link.linked_at,
   });
 }
