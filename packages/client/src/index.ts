@@ -137,6 +137,10 @@ export class OrunClient {
     return resp.json() as Promise<{ namespaceId: string; namespaceSlug: string; linkedAt: string }>;
   }
 
+  async linkRepoFromSession(repoFullName: string): Promise<{ namespaceId: string; namespaceSlug: string; linkedAt: string }> {
+    return this.request("POST", "/v1/accounts/repos/link", { body: { repoFullName } }) as Promise<{ namespaceId: string; namespaceSlug: string; linkedAt: string }>;
+  }
+
   async listRuns(params?: { limit?: number; offset?: number }): Promise<{ runs: Run[] }> {
     const query: Record<string, string> = {};
     if (params?.limit !== undefined) query.limit = String(params.limit);

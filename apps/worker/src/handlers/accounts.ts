@@ -25,6 +25,36 @@ interface LinkedRepoRow {
 
 // ─── D1 Helpers ─────────────────────────────────────────────────────────────
 
+export async function upsertBulkNamespaceSlugs(
+  db: D1Database,
+  slugs: Array<{ id: string; slug: string }>,
+  now?: string,
+): Promise<void> {
+  const ts = now ?? new Date().toISOString();
+  for (const { id, slug } of slugs) {
+    await db
+      .prepare(
+        `INSERT INTO namespaces (namespace_id, namespace_slug, last_seen_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(namespace_id) DO UPDATE SET
+           namespace_slug = excluded.namespace_slug,
+           last_seen_at = excluded.last_seen_at`,
+      )
+      .bind(id, slug, ts)
+      .run();
+  }
+}
+
+async function lookupNamespaceBySlug(
+  db: D1Database,
+  slug: string,
+): Promise<{ namespace_id: string; namespace_slug: string } | null> {
+  return db
+    .prepare("SELECT namespace_id, namespace_slug FROM namespaces WHERE namespace_slug = ?1")
+    .bind(slug)
+    .first<{ namespace_id: string; namespace_slug: string }>();
+}
+
 export async function getOrCreateAccount(
   db: D1Database,
   githubLogin: string,
@@ -339,4 +369,53 @@ export async function handleUnlinkRepo(rc: RouteContext): Promise<Response> {
     await unlinkRepo(rc.env.DB, account.account_id, namespaceId);
   }
   return json({ ok: true });
+}
+
+export async function handleLinkRepoFromSession(rc: RouteContext): Promise<Response> {
+  if (rc.authCtx.type !== "session") {
+    throw new OrunError("FORBIDDEN", "Session authentication required");
+  }
+  if (rc.authCtx.sessionKind !== "cli") {
+    throw new OrunError("FORBIDDEN", "CLI session required for this endpoint");
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await rc.request.json()) as Record<string, unknown>;
+  } catch {
+    throw new OrunError("INVALID_REQUEST", "Invalid JSON body");
+  }
+
+  const rawRepoFullName = body.repoFullName;
+  if (!rawRepoFullName || typeof rawRepoFullName !== "string") {
+    throw new OrunError("INVALID_REQUEST", "repoFullName is required");
+  }
+  validateRepoFullName(rawRepoFullName);
+
+  const ns = await lookupNamespaceBySlug(rc.env.DB, rawRepoFullName);
+  if (!ns) {
+    throw new OrunError(
+      "NOT_FOUND",
+      `Repository ${rawRepoFullName} is not known to this backend. Re-run \`orun auth login\` to refresh your namespace list.`,
+    );
+  }
+
+  if (!rc.authCtx.allowedNamespaceIds.includes(ns.namespace_id)) {
+    throw new OrunError("FORBIDDEN", "Repository not in your allowed namespaces");
+  }
+
+  const account = await getOrCreateAccount(rc.env.DB, rc.authCtx.actor);
+  const link = await linkRepo(
+    rc.env.DB,
+    account.account_id,
+    ns.namespace_id,
+    ns.namespace_slug,
+    rc.authCtx.actor,
+  );
+
+  return json({
+    namespaceId: link.namespace_id,
+    namespaceSlug: link.namespace_slug,
+    linkedAt: link.linked_at,
+  });
 }

@@ -142,6 +142,11 @@ function makeD1DatabaseForAccounts() {
             if (r) return { ...r, namespace_slug: namespaces[r.namespace_id as string]?.namespace_slug ?? "test/repo" };
             return null;
           }
+          if (sql.includes("FROM namespaces") && sql.includes("namespace_slug =")) {
+            const slug = args[0] as string;
+            const ns = Object.values(namespaces).find((n) => n.namespace_slug === slug);
+            return ns ? { namespace_id: ns.namespace_id, namespace_slug: ns.namespace_slug } : null;
+          }
           if (sql.includes("FROM namespaces")) {
             const ns = namespaces[args[0] as string];
             return ns ? { namespace_slug: ns.namespace_slug } : null;
@@ -257,6 +262,7 @@ vi.mock("../auth", async (importOriginal) => {
       sessionToken: "session-jwt-token",
       githubLogin: "testuser",
       allowedNamespaceIds: ["123456", "789"],
+      namespaceSlugs: [],
     })),
     OrunError: original.OrunError,
     __setMockAuth: (auth: RequestContext) => { mockAuthResult = auth; },
@@ -639,7 +645,6 @@ describe("verifyRepoAdminAccess", () => {
 
 describe("resolveSessionNamespaceIds", () => {
   let resolveSessionNamespaceIds: typeof import("./accounts").resolveSessionNamespaceIds;
-
   beforeEach(async () => {
     const mod = await import("./accounts");
     resolveSessionNamespaceIds = mod.resolveSessionNamespaceIds;
@@ -784,5 +789,149 @@ describe("Session reads with linked namespaces", () => {
       env, ctx,
     );
     expect(resp.status).toBe(403);
+  });
+});
+
+describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => {
+  let dbState: ReturnType<typeof makeD1DatabaseForAccounts>;
+  let env: Env;
+  let ctx: ExecutionContext & { _flush: () => Promise<unknown[]> };
+
+  beforeEach(() => {
+    dbState = makeD1DatabaseForAccounts();
+    env = makeEnv(dbState.db);
+    ctx = makeExecutionContext();
+    dbState._namespaces["ns-123"] = { namespace_id: "ns-123", namespace_slug: "sourceplane/orun", last_seen_at: "2026-01-01T00:00:00Z" };
+    __setMockAuth({
+      type: "session",
+      sessionKind: "cli",
+      namespace: null,
+      allowedNamespaceIds: ["ns-123"],
+      actor: "testuser",
+    });
+  });
+
+  it("succeeds for a CLI session whose allowedNamespaceIds includes the repo", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(200);
+    const data = await resp.json() as { namespaceId: string; namespaceSlug: string; linkedAt: string };
+    expect(data.namespaceId).toBe("ns-123");
+    expect(data.namespaceSlug).toBe("sourceplane/orun");
+    expect(data.linkedAt).toBeDefined();
+  });
+
+  it("is idempotent — calling twice returns the same linkedAt", async () => {
+    const resp1 = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    const data1 = await resp1.json() as { linkedAt: string };
+
+    const resp2 = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    const data2 = await resp2.json() as { linkedAt: string };
+
+    expect(data1.linkedAt).toBe(data2.linkedAt);
+  });
+
+  it("rejects dashboard sessions with 403", async () => {
+    __setMockAuth({
+      type: "session",
+      sessionKind: "dashboard",
+      namespace: null,
+      allowedNamespaceIds: ["ns-123"],
+      actor: "testuser",
+    });
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("FORBIDDEN");
+  });
+
+  it("returns NOT_FOUND for a repo slug not known in D1", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "unknown/repo" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(404);
+    const data = await resp.json() as { code: string; error: string };
+    expect(data.code).toBe("NOT_FOUND");
+    expect(data.error).toMatch(/orun auth login/);
+  });
+
+  it("returns FORBIDDEN for a known slug outside allowedNamespaceIds", async () => {
+    dbState._namespaces["other-ns"] = { namespace_id: "other-ns", namespace_slug: "other/repo", last_seen_at: "t" };
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "other/repo" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("FORBIDDEN");
+  });
+
+  it("returns INVALID_REQUEST for missing repoFullName", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", {}),
+      env, ctx,
+    );
+    expect(resp.status).toBe(400);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("INVALID_REQUEST");
+  });
+
+  it("returns INVALID_REQUEST for malformed repoFullName", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "no-slash-here" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(400);
+  });
+
+  it("does not require X-GitHub-Access-Token", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(200);
+  });
+});
+
+describe("upsertBulkNamespaceSlugs", () => {
+  it("upserts multiple namespace slug mappings into D1", async () => {
+    const { upsertBulkNamespaceSlugs } = await import("./accounts");
+    const dbState = makeD1DatabaseForAccounts();
+
+    await upsertBulkNamespaceSlugs(dbState.db, [
+      { id: "ns-a", slug: "org/repo-a" },
+      { id: "ns-b", slug: "org/repo-b" },
+    ]);
+
+    expect(dbState._namespaces["ns-a"]).toMatchObject({ namespace_id: "ns-a", namespace_slug: "org/repo-a" });
+    expect(dbState._namespaces["ns-b"]).toMatchObject({ namespace_id: "ns-b", namespace_slug: "org/repo-b" });
+  });
+
+  it("updates existing slug on conflict", async () => {
+    const { upsertBulkNamespaceSlugs } = await import("./accounts");
+    const dbState = makeD1DatabaseForAccounts();
+    dbState._namespaces["ns-a"] = { namespace_id: "ns-a", namespace_slug: "old/slug", last_seen_at: "t" };
+
+    await upsertBulkNamespaceSlugs(dbState.db, [{ id: "ns-a", slug: "new/slug" }]);
+
+    expect(dbState._namespaces["ns-a"].namespace_slug).toBe("new/slug");
+  });
+
+  it("no-ops for empty array", async () => {
+    const { upsertBulkNamespaceSlugs } = await import("./accounts");
+    const dbState = makeD1DatabaseForAccounts();
+    await expect(upsertBulkNamespaceSlugs(dbState.db, [])).resolves.toBeUndefined();
   });
 });

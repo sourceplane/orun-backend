@@ -184,6 +184,7 @@ vi.mock("./auth", async (importOriginal) => {
       sessionKind: "dashboard" as const,
       githubLogin: "testuser",
       allowedNamespaceIds: ["123456", "789"],
+      namespaceSlugs: [],
     })),
     OrunError: original.OrunError,
     __setMockAuth: (auth: RequestContext) => { mockAuthResult = auth; },

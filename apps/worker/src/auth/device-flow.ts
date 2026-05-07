@@ -1,6 +1,7 @@
 import type { Env } from "@orun/types";
 import { OrunError } from "./errors";
 import { generateRefreshToken } from "./github-oauth";
+import type { NamespaceRef } from "./github-oauth";
 import { issueSessionToken } from "./session";
 import { base64urlEncode, base64urlEncodeString, base64urlDecodeString } from "./base64url";
 import { signHmac, verifyHmac } from "./jwt";
@@ -34,6 +35,7 @@ export interface DevicePollSuccessResponse {
   refreshExpiresAt: string;
   githubLogin: string;
   allowedNamespaceIds: string[];
+  namespaceSlugs: NamespaceRef[];
   _refreshTokenHash: string;
 }
 
@@ -115,29 +117,29 @@ function parseLinkNext(link: string | null): string | null {
   return match ? match[1] : null;
 }
 
-async function fetchAdminRepos(accessToken: string): Promise<string[]> {
+async function fetchAdminRepos(accessToken: string): Promise<NamespaceRef[]> {
   const repos = await fetchAllPages<GitHubRepoPermission>(
     `${GITHUB_API_BASE}/user/repos?type=all&per_page=100`,
     accessToken,
   );
-  return repos.filter((r) => r.permissions?.admin).map((r) => String(r.id));
+  return repos.filter((r) => r.permissions?.admin).map((r) => ({ id: String(r.id), slug: r.full_name }));
 }
 
-async function fetchOrgAdminRepoIds(accessToken: string): Promise<string[]> {
+async function fetchOrgAdminRepos(accessToken: string): Promise<NamespaceRef[]> {
   const memberships = await fetchAllPages<OrgMembership>(
     `${GITHUB_API_BASE}/user/memberships/orgs?per_page=100`,
     accessToken,
   );
   const adminOrgs = memberships.filter((m) => m.role === "admin");
-  const ids: string[] = [];
+  const items: NamespaceRef[] = [];
   for (const org of adminOrgs) {
     const repos = await fetchAllPages<GitHubRepoPermission>(
       `${GITHUB_API_BASE}/orgs/${org.organization.login}/repos?type=all&per_page=100`,
       accessToken,
     );
-    for (const r of repos) ids.push(String(r.id));
+    for (const r of repos) items.push({ id: String(r.id), slug: r.full_name });
   }
-  return ids;
+  return items;
 }
 
 export async function pollDeviceFlow(
@@ -203,11 +205,16 @@ export async function pollDeviceFlow(
   }
   const user = (await userResp.json()) as { login: string; id: number };
 
-  const [repoIds, orgRepoIds] = await Promise.all([
+  const [repoItems, orgRepoItems] = await Promise.all([
     fetchAdminRepos(githubAccessToken),
-    fetchOrgAdminRepoIds(githubAccessToken),
+    fetchOrgAdminRepos(githubAccessToken),
   ]);
-  const allowedNamespaceIds = [...new Set([...repoIds, ...orgRepoIds])];
+  const seen = new Map<string, string>();
+  for (const r of [...repoItems, ...orgRepoItems]) {
+    if (!seen.has(r.id)) seen.set(r.id, r.slug);
+  }
+  const namespaceSlugs: NamespaceRef[] = Array.from(seen.entries()).map(([id, slug]) => ({ id, slug }));
+  const allowedNamespaceIds = namespaceSlugs.map((r) => r.id);
 
   const accessToken = await issueSessionToken(
     { sub: user.login, allowedNamespaceIds, sessionKind: "cli", tokenUse: "access" },
@@ -225,6 +232,7 @@ export async function pollDeviceFlow(
     refreshExpiresAt,
     githubLogin: user.login,
     allowedNamespaceIds,
+    namespaceSlugs,
     _refreshTokenHash,
   };
 }

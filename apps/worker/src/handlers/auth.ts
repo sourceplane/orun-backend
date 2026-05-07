@@ -5,7 +5,7 @@ import { startDeviceFlow, pollDeviceFlow } from "../auth/device-flow";
 import { issueSessionToken } from "../auth/session";
 import { D1Index } from "@orun/storage";
 import { OrunError } from "../auth/errors";
-import { getOrCreateAccount } from "./accounts";
+import { getOrCreateAccount, upsertBulkNamespaceSlugs } from "./accounts";
 import { json } from "../http";
 
 interface RouteContext {
@@ -24,6 +24,10 @@ export async function handleAuthGitHub(rc: RouteContext): Promise<Response> {
 
 export async function handleAuthGitHubCallback(rc: RouteContext): Promise<Response> {
   const result = await handleGitHubOAuthCallback(rc.request, rc.env);
+
+  if (result.namespaceSlugs && result.namespaceSlugs.length > 0) {
+    await upsertBulkNamespaceSlugs(rc.env.DB, result.namespaceSlugs);
+  }
 
   if (result.sessionKind === "cli" && result.refreshToken && result._refreshTokenHash) {
     const account = await getOrCreateAccount(rc.env.DB, result.githubLogin);
@@ -95,6 +99,10 @@ export async function handleCliDevicePoll(rc: RouteContext): Promise<Response> {
   }
 
   const successResult = pollResult as Exclude<typeof pollResult, { status: "pending" }>;
+
+  if (successResult.namespaceSlugs && successResult.namespaceSlugs.length > 0) {
+    await upsertBulkNamespaceSlugs(rc.env.DB, successResult.namespaceSlugs);
+  }
 
   const account = await getOrCreateAccount(rc.env.DB, successResult.githubLogin);
   const db = new D1Index(rc.env.DB);
