@@ -283,6 +283,7 @@ export interface OAuthCallbackResult {
   sessionToken: string;
   sessionKind: "dashboard" | "cli";
   githubLogin: string;
+  githubUserId: string;
   allowedNamespaceIds: string[];
   namespaceSlugs: NamespaceRef[];
   returnTo?: string;
@@ -341,7 +342,7 @@ export async function handleGitHubOAuthCallback(
   const sessionKind: "dashboard" | "cli" = isCli ? "cli" : "dashboard";
 
   const sessionToken = await issueSessionToken(
-    { sub: user.login, allowedNamespaceIds, sessionKind, tokenUse: "access" },
+    { sub: user.login, allowedNamespaceIds, sessionKind, tokenUse: "access", githubUserId: String(user.id) },
     sessionSecret,
   );
 
@@ -349,6 +350,7 @@ export async function handleGitHubOAuthCallback(
     sessionToken,
     sessionKind,
     githubLogin: user.login,
+    githubUserId: String(user.id),
     allowedNamespaceIds,
     namespaceSlugs,
     returnTo: statePayload.returnTo,

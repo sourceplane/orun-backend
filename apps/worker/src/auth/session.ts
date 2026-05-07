@@ -66,6 +66,7 @@ export async function verifySessionToken(
     allowedNamespaceIds: payload.allowedNamespaceIds as string[],
     sessionKind: (payload.sessionKind as "dashboard" | "cli" | undefined) ?? undefined,
     tokenUse: (payload.tokenUse as "access" | undefined) ?? undefined,
+    githubUserId: typeof payload.githubUserId === "string" ? payload.githubUserId : undefined,
     exp: payload.exp as number,
     iat: payload.iat as number,
   };

@@ -3,9 +3,10 @@ import type { Env } from "@orun/types";
 import type { RequestContext } from "../auth";
 
 function makeD1DatabaseForAccounts() {
-  const accounts: Record<string, { account_id: string; github_login: string; created_at: string }> = {};
+  const accounts: Record<string, { account_id: string; github_login: string; github_user_id: string | null; created_at: string }> = {};
   const accountRepos: Record<string, { account_id: string; namespace_id: string; linked_by: string; linked_at: string }> = {};
-  const namespaces: Record<string, { namespace_id: string; namespace_slug: string; last_seen_at: string }> = {};
+  const namespaces: Record<string, { namespace_id: string; namespace_slug: string; namespace_kind: string; last_seen_at: string }> = {};
+  const accountRepoCache: Record<string, { account_id: string; repo_id: string; repo_full_name: string; last_seen_at: string }> = {};
   const runs: Record<string, Record<string, unknown>> = {};
   const jobs: Record<string, Record<string, unknown>> = {};
 
@@ -19,17 +20,25 @@ function makeD1DatabaseForAccounts() {
               accounts[login] = {
                 account_id: args[0] as string,
                 github_login: login,
+                github_user_id: null,
                 created_at: args[2] as string,
               };
             }
             return { meta: { changes: accounts[login] ? 0 : 1 } };
+          }
+          if (sql.includes("UPDATE accounts SET github_user_id")) {
+            const userId = args[0] as string;
+            const login = args[1] as string;
+            if (accounts[login]) accounts[login].github_user_id = userId;
+            return { meta: { changes: 1 } };
           }
           if (sql.includes("INSERT INTO namespaces")) {
             const nsId = args[0] as string;
             namespaces[nsId] = {
               namespace_id: nsId,
               namespace_slug: args[1] as string,
-              last_seen_at: args[2] as string,
+              namespace_kind: (args[2] as string) ?? "repo",
+              last_seen_at: (args[3] as string) ?? (args[2] as string),
             };
             return { meta: { changes: 1 } };
           }
@@ -44,6 +53,16 @@ function makeD1DatabaseForAccounts() {
               };
             }
             return { meta: { changes: accountRepos[key] ? 0 : 1 } };
+          }
+          if (sql.includes("INSERT INTO account_repo_cache")) {
+            const key = `${args[0]}:${args[1]}`;
+            accountRepoCache[key] = {
+              account_id: args[0] as string,
+              repo_id: args[1] as string,
+              repo_full_name: args[2] as string,
+              last_seen_at: args[3] as string,
+            };
+            return { meta: { changes: 1 } };
           }
           if (sql.includes("DELETE FROM account_repos")) {
             const key = `${args[0]}:${args[1]}`;
@@ -136,6 +155,20 @@ function makeD1DatabaseForAccounts() {
               linked_at: ar.linked_at,
             };
           }
+          if (sql.includes("FROM account_repo_cache") && sql.includes("repo_full_name =")) {
+            const accountId = args[0] as string;
+            const repoFullName = args[1] as string;
+            const entry = Object.values(accountRepoCache).find(
+              (r) => r.account_id === accountId && r.repo_full_name === repoFullName
+            );
+            return entry ?? null;
+          }
+          if (sql.includes("FROM account_repo_cache") && sql.includes("repo_id =")) {
+            const accountId = args[0] as string;
+            const repoId = args[1] as string;
+            const key = `${accountId}:${repoId}`;
+            return accountRepoCache[key] ?? null;
+          }
           if (sql.includes("FROM runs")) {
             const key = `${args[0]}:${args[1]}`;
             const r = runs[key];
@@ -162,6 +195,7 @@ function makeD1DatabaseForAccounts() {
     _accounts: accounts,
     _accountRepos: accountRepos,
     _namespaces: namespaces,
+    _accountRepoCache: accountRepoCache,
     _runs: runs,
   };
 }
@@ -261,6 +295,7 @@ vi.mock("../auth", async (importOriginal) => {
     handleGitHubOAuthCallback: vi.fn(async () => ({
       sessionToken: "session-jwt-token",
       githubLogin: "testuser",
+      githubUserId: "11111",
       allowedNamespaceIds: ["123456", "789"],
       namespaceSlugs: [],
     })),
@@ -655,7 +690,7 @@ describe("resolveSessionNamespaceIds", () => {
     const { getOrCreateAccount, linkRepo } = await import("./accounts");
 
     const account = await getOrCreateAccount(dbState.db, "testuser");
-    dbState._namespaces["linked-ns"] = { namespace_id: "linked-ns", namespace_slug: "org/linked", last_seen_at: "t" };
+    dbState._namespaces["linked-ns"] = { namespace_id: "linked-ns", namespace_slug: "org/linked", namespace_kind: "repo", last_seen_at: "t" };
     await linkRepo(dbState.db, account.account_id, "linked-ns", "org/linked", "testuser");
 
     const authCtx: RequestContext = {
@@ -676,7 +711,7 @@ describe("resolveSessionNamespaceIds", () => {
     const { getOrCreateAccount, linkRepo } = await import("./accounts");
 
     const account = await getOrCreateAccount(dbState.db, "testuser");
-    dbState._namespaces["shared-ns"] = { namespace_id: "shared-ns", namespace_slug: "org/shared", last_seen_at: "t" };
+    dbState._namespaces["shared-ns"] = { namespace_id: "shared-ns", namespace_slug: "org/shared", namespace_kind: "repo", last_seen_at: "t" };
     await linkRepo(dbState.db, account.account_id, "shared-ns", "org/shared", "testuser");
 
     const authCtx: RequestContext = {
@@ -728,7 +763,7 @@ describe("Session reads with linked namespaces", () => {
 
     const { getOrCreateAccount, linkRepo } = await import("./accounts");
     const account = await getOrCreateAccount(dbState.db, "testuser");
-    dbState._namespaces["linked-ns"] = { namespace_id: "linked-ns", namespace_slug: "org/linked", last_seen_at: "t" };
+    dbState._namespaces["linked-ns"] = { namespace_id: "linked-ns", namespace_slug: "org/linked", namespace_kind: "repo", last_seen_at: "t" };
     await linkRepo(dbState.db, account.account_id, "linked-ns", "org/linked", "testuser");
 
     dbState._runs["linked-ns:run-linked"] = {
@@ -766,33 +801,9 @@ describe("Session reads with linked namespaces", () => {
     const resp = await routeRequest(req("GET", "/v1/runs/run-unlinked"), env, ctx);
     expect(resp.status).toBe(404);
   });
-
-  it("session-created runs can target linked namespaces", async () => {
-    dbState._namespaces["linked-ns"] = { namespace_id: "linked-ns", namespace_slug: "org/linked", last_seen_at: "t" };
-
-    const resp = await routeRequest(
-      req("POST", "/v1/runs", {
-        plan: { checksum: "abc", version: "1", jobs: [{ jobId: "j1", component: "c", deps: [], steps: [] }], createdAt: "t" },
-        namespaceId: "linked-ns",
-      }),
-      env, ctx,
-    );
-    expect(resp.status).toBe(201);
-  });
-
-  it("session-created runs still reject unlinked namespaces", async () => {
-    const resp = await routeRequest(
-      req("POST", "/v1/runs", {
-        plan: { checksum: "abc", version: "1", jobs: [{ jobId: "j1", component: "c", deps: [], steps: [] }], createdAt: "t" },
-        namespaceId: "totally-unlinked",
-      }),
-      env, ctx,
-    );
-    expect(resp.status).toBe(403);
-  });
 });
 
-describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => {
+describe("POST /v1/accounts/repos/link — CLI session local namespace", () => {
   let dbState: ReturnType<typeof makeD1DatabaseForAccounts>;
   let env: Env;
   let ctx: ExecutionContext & { _flush: () => Promise<unknown[]> };
@@ -801,25 +812,49 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
     dbState = makeD1DatabaseForAccounts();
     env = makeEnv(dbState.db);
     ctx = makeExecutionContext();
-    dbState._namespaces["ns-123"] = { namespace_id: "ns-123", namespace_slug: "sourceplane/orun", last_seen_at: "2026-01-01T00:00:00Z" };
+    // Seed: account for testuser with github_user_id "11111"
+    dbState._accounts["testuser"] = {
+      account_id: "acct-1",
+      github_login: "testuser",
+      github_user_id: "11111",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    // Seed: account_repo_cache entry linking "acct-1" to repo ID "987654321" / "sourceplane/orun"
+    dbState._accountRepoCache["acct-1:987654321"] = {
+      account_id: "acct-1",
+      repo_id: "987654321",
+      repo_full_name: "sourceplane/orun",
+      last_seen_at: "2026-01-01T00:00:00Z",
+    };
     __setMockAuth({
       type: "session",
       sessionKind: "cli",
       namespace: null,
-      allowedNamespaceIds: ["ns-123"],
+      allowedNamespaceIds: [],
       actor: "testuser",
+      githubUserId: "11111",
     });
   });
 
-  it("succeeds for any CLI session with a known repo slug", async () => {
+  it("returns a local namespace from the account-scoped repo cache", async () => {
     const resp = await routeRequest(
       req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
       env, ctx,
     );
     expect(resp.status).toBe(200);
-    const data = await resp.json() as { namespaceId: string; namespaceSlug: string; linkedAt: string };
-    expect(data.namespaceId).toBe("ns-123");
-    expect(data.namespaceSlug).toBe("sourceplane/orun");
+    const data = await resp.json() as {
+      namespaceKind: string;
+      namespaceId: string;
+      namespaceSlug: string;
+      repoId: string;
+      repoFullName: string;
+      linkedAt: string;
+    };
+    expect(data.namespaceKind).toBe("local");
+    expect(data.namespaceId).toBe("local:user:11111:repo:987654321");
+    expect(data.namespaceSlug).toBe("local:testuser/sourceplane/orun");
+    expect(data.repoId).toBe("987654321");
+    expect(data.repoFullName).toBe("sourceplane/orun");
     expect(data.linkedAt).toBeDefined();
   });
 
@@ -844,7 +879,7 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
       type: "session",
       sessionKind: "dashboard",
       namespace: null,
-      allowedNamespaceIds: ["ns-123"],
+      allowedNamespaceIds: [],
       actor: "testuser",
     });
     const resp = await routeRequest(
@@ -856,9 +891,29 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
     expect(data.code).toBe("FORBIDDEN");
   });
 
-  it("returns NOT_FOUND for a repo slug not known in D1", async () => {
+  it("rejects CLI session missing githubUserId with 403", async () => {
+    __setMockAuth({
+      type: "session",
+      sessionKind: "cli",
+      namespace: null,
+      allowedNamespaceIds: [],
+      actor: "testuser",
+      // no githubUserId
+    });
     const resp = await routeRequest(
-      req("POST", "/v1/accounts/repos/link", { repoFullName: "unknown/repo" }),
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
+    const data = await resp.json() as { code: string; error: string };
+    expect(data.code).toBe("FORBIDDEN");
+    expect(data.error).toMatch(/orun auth login/);
+  });
+
+  it("returns NOT_FOUND for a repo not in the caller's account-scoped cache", async () => {
+    // "other/repo" is not in dbState._accountRepoCache for acct-1
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "other/repo" }),
       env, ctx,
     );
     expect(resp.status).toBe(404);
@@ -867,15 +922,31 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
     expect(data.error).toMatch(/orun auth login/);
   });
 
-  it("succeeds for a known slug not in allowedNamespaceIds (stale session)", async () => {
-    dbState._namespaces["other-ns"] = { namespace_id: "other-ns", namespace_slug: "other/repo", last_seen_at: "t" };
+  it("does not fall back to global namespaces table when repo is unknown to caller", async () => {
+    // A repo slug exists globally (e.g., added by another admin user) but is NOT in
+    // acct-1's account_repo_cache. The link endpoint must reject it.
+    dbState._namespaces["999999"] = {
+      namespace_id: "999999",
+      namespace_slug: "foreign/repo",
+      namespace_kind: "repo",
+      last_seen_at: "t",
+    };
+    // acct-1 has no account_repo_cache entry for "foreign/repo"
     const resp = await routeRequest(
-      req("POST", "/v1/accounts/repos/link", { repoFullName: "other/repo" }),
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "foreign/repo" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(404);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("NOT_FOUND");
+  });
+
+  it("does not require X-GitHub-Access-Token", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
       env, ctx,
     );
     expect(resp.status).toBe(200);
-    const data = await resp.json() as { namespaceId: string };
-    expect(data.namespaceId).toBe("other-ns");
   });
 
   it("returns INVALID_REQUEST for missing repoFullName", async () => {
@@ -896,12 +967,182 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
     expect(resp.status).toBe(400);
   });
 
-  it("does not require X-GitHub-Access-Token", async () => {
-    const resp = await routeRequest(
+  it("two users linking the same repo receive different local namespace IDs", async () => {
+    // User A: githubUserId=11111, acct-1 already seeded
+    // User B: githubUserId=22222
+    dbState._accounts["userB"] = {
+      account_id: "acct-2",
+      github_login: "userB",
+      github_user_id: "22222",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    dbState._accountRepoCache["acct-2:987654321"] = {
+      account_id: "acct-2",
+      repo_id: "987654321",
+      repo_full_name: "sourceplane/orun",
+      last_seen_at: "2026-01-01T00:00:00Z",
+    };
+
+    const respA = await routeRequest(
       req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
       env, ctx,
     );
-    expect(resp.status).toBe(200);
+    const dataA = await respA.json() as { namespaceId: string };
+
+    __setMockAuth({
+      type: "session",
+      sessionKind: "cli",
+      namespace: null,
+      allowedNamespaceIds: [],
+      actor: "userB",
+      githubUserId: "22222",
+    });
+
+    const respB = await routeRequest(
+      req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    const dataB = await respB.json() as { namespaceId: string };
+
+    expect(dataA.namespaceId).toBe("local:user:11111:repo:987654321");
+    expect(dataB.namespaceId).toBe("local:user:22222:repo:987654321");
+    expect(dataA.namespaceId).not.toBe(dataB.namespaceId);
+  });
+});
+
+describe("POST /v1/runs — CLI session local namespace derivation", () => {
+  let dbState: ReturnType<typeof makeD1DatabaseForAccounts>;
+  let env: Env;
+  let ctx: ExecutionContext & { _flush: () => Promise<unknown[]> };
+
+  const minPlan = {
+    checksum: "abc123",
+    version: "1",
+    jobs: [{ jobId: "j1", component: "c", deps: [], steps: [] }],
+    createdAt: "t",
+  };
+
+  beforeEach(() => {
+    dbState = makeD1DatabaseForAccounts();
+    env = makeEnv(dbState.db);
+    ctx = makeExecutionContext();
+
+    dbState._accounts["testuser"] = {
+      account_id: "acct-1",
+      github_login: "testuser",
+      github_user_id: "11111",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    dbState._accountRepoCache["acct-1:987654321"] = {
+      account_id: "acct-1",
+      repo_id: "987654321",
+      repo_full_name: "sourceplane/orun",
+      last_seen_at: "2026-01-01T00:00:00Z",
+    };
+    dbState._namespaces["local:user:11111:repo:987654321"] = {
+      namespace_id: "local:user:11111:repo:987654321",
+      namespace_slug: "local:testuser/sourceplane/orun",
+      namespace_kind: "local",
+      last_seen_at: "2026-01-01T00:00:00Z",
+    };
+
+    __setMockAuth({
+      type: "session",
+      sessionKind: "cli",
+      namespace: null,
+      allowedNamespaceIds: [],
+      actor: "testuser",
+      githubUserId: "11111",
+    });
+  });
+
+  it("derives local namespace from repoFullName", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", { plan: minPlan, repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(201);
+    const data = await resp.json() as { runId: string };
+    expect(data.runId).toBeDefined();
+  });
+
+  it("accepts a correct pre-computed local namespaceId", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", {
+        plan: minPlan,
+        namespaceId: "local:user:11111:repo:987654321",
+      }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(201);
+  });
+
+  it("rejects a mismatched local namespaceId", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", {
+        plan: minPlan,
+        repoFullName: "sourceplane/orun",
+        namespaceId: "local:user:11111:repo:WRONG",
+      }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("FORBIDDEN");
+  });
+
+  it("rejects session attempts to create under canonical repo namespace IDs", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", {
+        plan: minPlan,
+        namespaceId: "987654321",
+      }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("FORBIDDEN");
+  });
+
+  it("rejects CLI session missing githubUserId with 403", async () => {
+    __setMockAuth({
+      type: "session",
+      sessionKind: "cli",
+      namespace: null,
+      allowedNamespaceIds: [],
+      actor: "testuser",
+      // no githubUserId
+    });
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", { plan: minPlan, repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
+  });
+
+  it("returns NOT_FOUND when repoFullName is not in the caller's repo cache", async () => {
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", { plan: minPlan, repoFullName: "not/cached" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(404);
+    const data = await resp.json() as { code: string };
+    expect(data.code).toBe("NOT_FOUND");
+  });
+
+  it("rejects dashboard sessions from creating runs", async () => {
+    __setMockAuth({
+      type: "session",
+      sessionKind: "dashboard",
+      namespace: null,
+      allowedNamespaceIds: ["123456"],
+      actor: "testuser",
+    });
+    const resp = await routeRequest(
+      req("POST", "/v1/runs", { plan: minPlan, repoFullName: "sourceplane/orun" }),
+      env, ctx,
+    );
+    expect(resp.status).toBe(403);
   });
 });
 
@@ -922,7 +1163,7 @@ describe("upsertBulkNamespaceSlugs", () => {
   it("updates existing slug on conflict", async () => {
     const { upsertBulkNamespaceSlugs } = await import("./accounts");
     const dbState = makeD1DatabaseForAccounts();
-    dbState._namespaces["ns-a"] = { namespace_id: "ns-a", namespace_slug: "old/slug", last_seen_at: "t" };
+    dbState._namespaces["ns-a"] = { namespace_id: "ns-a", namespace_slug: "old/slug", namespace_kind: "repo", last_seen_at: "t" };
 
     await upsertBulkNamespaceSlugs(dbState.db, [{ id: "ns-a", slug: "new/slug" }]);
 
@@ -933,5 +1174,27 @@ describe("upsertBulkNamespaceSlugs", () => {
     const { upsertBulkNamespaceSlugs } = await import("./accounts");
     const dbState = makeD1DatabaseForAccounts();
     await expect(upsertBulkNamespaceSlugs(dbState.db, [])).resolves.toBeUndefined();
+  });
+});
+
+describe("upsertAccountRepoCache", () => {
+  it("stores repos in the account-scoped cache", async () => {
+    const { upsertAccountRepoCache, getOrCreateAccount } = await import("./accounts");
+    const dbState = makeD1DatabaseForAccounts();
+    const account = await getOrCreateAccount(dbState.db, "alice");
+
+    await upsertAccountRepoCache(dbState.db, account.account_id, [
+      { id: "111", slug: "alice/repo-a" },
+      { id: "222", slug: "alice/repo-b" },
+    ]);
+
+    expect(dbState._accountRepoCache[`${account.account_id}:111`]).toMatchObject({
+      repo_id: "111",
+      repo_full_name: "alice/repo-a",
+    });
+    expect(dbState._accountRepoCache[`${account.account_id}:222`]).toMatchObject({
+      repo_id: "222",
+      repo_full_name: "alice/repo-b",
+    });
   });
 });

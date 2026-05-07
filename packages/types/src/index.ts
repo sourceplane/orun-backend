@@ -5,6 +5,7 @@ import type { DurableObjectNamespace, R2Bucket, D1Database } from "@cloudflare/w
 export interface Namespace {
   namespaceId: string;
   namespaceSlug: string;
+  kind?: "repo" | "local";
 }
 
 export type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
@@ -68,6 +69,7 @@ export interface Plan {
 export interface CreateRunRequest {
   plan: Plan;
   runId?: string;
+  repoFullName?: string;
   dryRun?: boolean;
   triggerType?: "ci" | "manual" | "api";
   actor?: string;
@@ -77,6 +79,15 @@ export interface CreateRunResponse {
   runId: string;
   status: RunStatus;
   createdAt: string;
+}
+
+export interface LinkRepoFromSessionResponse {
+  namespaceKind: "local";
+  namespaceId: string;
+  namespaceSlug: string;
+  repoId: string;
+  repoFullName: string;
+  linkedAt: string;
 }
 
 export interface ClaimJobRequest {
@@ -133,6 +144,7 @@ export interface SessionClaims {
   allowedNamespaceIds: string[];
   sessionKind?: "dashboard" | "cli";
   tokenUse?: "access";
+  githubUserId?: string;
   exp: number;
   iat: number;
 }

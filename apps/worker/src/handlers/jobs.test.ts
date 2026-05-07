@@ -65,8 +65,9 @@ function makeCliAuth(): RequestContext {
     type: "session",
     sessionKind: "cli",
     namespace: null,
-    allowedNamespaceIds: ["ns-1"],
+    allowedNamespaceIds: ["local:user:11111:repo:987654321"],
     actor: "cliuser",
+    githubUserId: "11111",
   };
 }
 
@@ -121,12 +122,12 @@ describe("mutable route authorization", () => {
 
     it("allows CLI session when run found in D1", async () => {
       const runRow = {
-        run_id: "run-1", namespace_id: "ns-1", status: "running",
+        run_id: "run-1", namespace_id: "local:user:11111:repo:987654321", status: "running",
         plan_checksum: "abc", trigger_type: "ci", actor: null,
         dry_run: 0, created_at: "2025-01-01T00:00:00.000Z",
         updated_at: "2025-01-01T00:00:00.000Z", finished_at: null,
         job_total: 1, job_done: 0, job_failed: 0,
-        expires_at: "2099-01-01T00:00:00.000Z", namespace_slug: "org/repo",
+        expires_at: "2099-01-01T00:00:00.000Z", namespace_slug: "local:cliuser/org/repo",
       };
 
       const d1 = {
@@ -134,7 +135,7 @@ describe("mutable route authorization", () => {
           bind: (..._args: unknown[]) => ({
             run: vi.fn(async () => ({ meta: { changes: 0 } })),
             all: vi.fn(async () => {
-              if (sql.includes("account_repos")) return { results: [{ namespace_id: "ns-1" }] };
+              if (sql.includes("account_repos")) return { results: [{ namespace_id: "local:user:11111:repo:987654321" }] };
               return { results: [] };
             }),
             first: vi.fn(async () => runRow),
@@ -164,7 +165,7 @@ describe("mutable route authorization", () => {
           bind: (..._args: unknown[]) => ({
             run: vi.fn(async () => ({ meta: { changes: 0 } })),
             all: vi.fn(async () => {
-              if (sql.includes("account_repos")) return { results: [{ namespace_id: "ns-1" }] };
+              if (sql.includes("account_repos")) return { results: [{ namespace_id: "local:user:11111:repo:987654321" }] };
               return { results: [] };
             }),
             first: vi.fn(async () => null),

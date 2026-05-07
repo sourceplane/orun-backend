@@ -34,6 +34,7 @@ export interface DevicePollSuccessResponse {
   refreshToken: string;
   refreshExpiresAt: string;
   githubLogin: string;
+  githubUserId: string;
   allowedNamespaceIds: string[];
   namespaceSlugs: NamespaceRef[];
   _refreshTokenHash: string;
@@ -217,7 +218,7 @@ export async function pollDeviceFlow(
   const allowedNamespaceIds = namespaceSlugs.map((r) => r.id);
 
   const accessToken = await issueSessionToken(
-    { sub: user.login, allowedNamespaceIds, sessionKind: "cli", tokenUse: "access" },
+    { sub: user.login, allowedNamespaceIds, sessionKind: "cli", tokenUse: "access", githubUserId: String(user.id) },
     sessionSecret,
   );
   const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
@@ -231,6 +232,7 @@ export async function pollDeviceFlow(
     refreshToken,
     refreshExpiresAt,
     githubLogin: user.login,
+    githubUserId: String(user.id),
     allowedNamespaceIds,
     namespaceSlugs,
     _refreshTokenHash,
