@@ -400,10 +400,6 @@ export async function handleLinkRepoFromSession(rc: RouteContext): Promise<Respo
     );
   }
 
-  if (!rc.authCtx.allowedNamespaceIds.includes(ns.namespace_id)) {
-    throw new OrunError("FORBIDDEN", "Repository not in your allowed namespaces");
-  }
-
   const account = await getOrCreateAccount(rc.env.DB, rc.authCtx.actor);
   const link = await linkRepo(
     rc.env.DB,

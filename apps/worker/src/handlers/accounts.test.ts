@@ -811,7 +811,7 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
     });
   });
 
-  it("succeeds for a CLI session whose allowedNamespaceIds includes the repo", async () => {
+  it("succeeds for any CLI session with a known repo slug", async () => {
     const resp = await routeRequest(
       req("POST", "/v1/accounts/repos/link", { repoFullName: "sourceplane/orun" }),
       env, ctx,
@@ -867,15 +867,15 @@ describe("POST /v1/accounts/repos/link (session-based, no GitHub token)", () => 
     expect(data.error).toMatch(/orun auth login/);
   });
 
-  it("returns FORBIDDEN for a known slug outside allowedNamespaceIds", async () => {
+  it("succeeds for a known slug not in allowedNamespaceIds (stale session)", async () => {
     dbState._namespaces["other-ns"] = { namespace_id: "other-ns", namespace_slug: "other/repo", last_seen_at: "t" };
     const resp = await routeRequest(
       req("POST", "/v1/accounts/repos/link", { repoFullName: "other/repo" }),
       env, ctx,
     );
-    expect(resp.status).toBe(403);
-    const data = await resp.json() as { code: string };
-    expect(data.code).toBe("FORBIDDEN");
+    expect(resp.status).toBe(200);
+    const data = await resp.json() as { namespaceId: string };
+    expect(data.namespaceId).toBe("other-ns");
   });
 
   it("returns INVALID_REQUEST for missing repoFullName", async () => {
