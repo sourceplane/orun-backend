@@ -154,4 +154,4 @@ None required. All implementation decisions are consistent with `spec/11-dashboa
 
 ## PR Number
 
-See PR opened against `sourceplane/orun-backend` from branch `codex/task-0014-dashboard-catalog-ui`.
+PR #33 — https://github.com/sourceplane/orun-backend/pull/33
