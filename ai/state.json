@@ -1,10 +1,10 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 11,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10],
+  "current_task": 12,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11],
   "repo_health": "green",
-  "next_focus": "task-0011-orun-cli-auth-local-remote-state",
-  "last_verified": "2026-05-06",
+  "next_focus": "task-0012-local-remote-state-conformance",
+  "last_verified": "2026-05-07",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
   "stack_version": "oci://ghcr.io/sourceplane/stack-tectonic:0.12.0",
@@ -30,6 +30,7 @@
     "156 tests pass (21 client + 126 worker + 9 dashboard). All turbo tasks succeed.",
     "Spec update d651f52 adds local remote-state auth requirement: GitHub Actions uses OIDC; local remote-state uses GitHub OAuth/device login and Orun-issued CLI session tokens; SaaS dispatch later uses signed execution requests plus repo runner identity.",
     "Roadmap adjusted: Task 0010 is CLI cloud auth backend, Task 0011 is sourceplane/orun CLI auth + local remote-state auth, Task 0012 is local remote-state conformance, and CLI bootstrap moved to Task 0013.",
-    "Task 0010 (CLI auth backend) verified PASS and merged as PR #27. Implements: browser OAuth loopback, backend-mediated GitHub device flow, Orun access/refresh tokens with SHA-256 hashed storage, refresh/logout endpoints, CLI session mutable route authorization, D1 migration 0003. 162/162 tests pass. Accepted residual risks: device endpoint rate limiting deferred (proposal at ai/proposals/task-0010-device-flow-rate-limiting.md), refresh token not rotated, no CLI session GC yet."
+    "Task 0010 (CLI auth backend) verified PASS and merged as PR #27. Implements: browser OAuth loopback, backend-mediated GitHub device flow, Orun access/refresh tokens with SHA-256 hashed storage, refresh/logout endpoints, CLI session mutable route authorization, D1 migration 0003. 162/162 tests pass. Accepted residual risks: device endpoint rate limiting deferred (proposal at ai/proposals/task-0010-device-flow-rate-limiting.md), refresh token not rotated, no CLI session GC yet.",
+    "Task 0011 (orun CLI auth + local remote-state sessions) verified PASS and merged as PR #83 in sourceplane/orun (squash commit 9f8beecf5b3a7fc72d77ad9331e0d8af02a2af66). Implements: orun auth login (browser loopback + device flow), auth status/logout/token, orun cloud link, credential storage (keychain + 0600 file fallback), and local remote-state token resolution using Orun CLI sessions with auto-refresh. GitHub Actions OIDC behavior unchanged. All Go tests pass (-race clean, vet clean). Accepted residual risks: (1) ORUN_TOKEN in code is position 2 (before CLI session) vs spec position 3 — safe and intentional, proposal at ai/proposals/task-0011-orun-token-precedence.md; (2) orun cloud link cannot create new backend repo links without prior dashboard setup — proposal at ai/proposals/task-0011-cloud-link-api.md; (3) cloud link --backend-url flag missing (workaround: ORUN_BACKEND_URL env var); (4) orun auth token --audience is display-only."
   ]
 }
