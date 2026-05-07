@@ -191,4 +191,86 @@ describe("OrunClient", () => {
       expect(calls()[0].url).toBe("https://api.example.com/v1/runs/run-1/logs/job-1");
     });
   });
+
+  describe("catalog methods", () => {
+    it("syncCatalog POSTs to /v1/catalog/sync", async () => {
+      const { fn, calls } = mockFetch([{ status: 202, body: { uploadId: "upl-1", acceptedAt: "t", componentCount: 2 } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      const envelope = {
+        apiVersion: "orun.io/v1" as const,
+        kind: "CatalogSyncEnvelope" as const,
+        uploadId: "upl-1",
+        schemaVersion: "1",
+        source: { provider: "github" as const, repo: "org/repo", repoId: "123", commit: "abc" },
+        components: [],
+        generatedAt: "t",
+      };
+      const result = await client.syncCatalog(envelope);
+      expect(calls()[0].url).toBe("https://api.example.com/v1/catalog/sync");
+      expect(calls()[0].init.method).toBe("POST");
+      expect(result.uploadId).toBe("upl-1");
+    });
+
+    it("listCatalogComponents GETs /v1/catalog/components without params", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { components: [], total: 0 } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.listCatalogComponents();
+      expect(calls()[0].url).toBe("https://api.example.com/v1/catalog/components");
+    });
+
+    it("listCatalogComponents sends filter query params", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { components: [], total: 0 } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.listCatalogComponents({ type: "cloudflare-worker", owner: "team-a", limit: 10, offset: 5 });
+      const url = new URL(calls()[0].url);
+      expect(url.searchParams.get("type")).toBe("cloudflare-worker");
+      expect(url.searchParams.get("owner")).toBe("team-a");
+      expect(url.searchParams.get("limit")).toBe("10");
+      expect(url.searchParams.get("offset")).toBe("5");
+    });
+
+    it("getCatalogComponent GETs /v1/catalog/components/:componentId", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { component: { componentId: "cid" } } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.getCatalogComponent("github:123:api");
+      expect(calls()[0].url).toBe("https://api.example.com/v1/catalog/components/github%3A123%3Aapi");
+    });
+
+    it("getCatalogComponentHistory GETs /history", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { events: [] } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.getCatalogComponentHistory("cid-1");
+      expect(calls()[0].url).toBe("https://api.example.com/v1/catalog/components/cid-1/history");
+    });
+
+    it("getCatalogComponentRuns GETs /runs", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { runs: [] } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.getCatalogComponentRuns("cid-1");
+      expect(calls()[0].url).toBe("https://api.example.com/v1/catalog/components/cid-1/runs");
+    });
+
+    it("getCatalogComponentDependencies GETs /dependencies", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { outgoing: [], incoming: [] } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.getCatalogComponentDependencies("cid-1");
+      expect(calls()[0].url).toBe("https://api.example.com/v1/catalog/components/cid-1/dependencies");
+    });
+
+    it("listRepoComponents GETs /v1/repos/:repoId/components", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { components: [], total: 0 } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.listRepoComponents("987654");
+      expect(calls()[0].url).toBe("https://api.example.com/v1/repos/987654/components");
+    });
+
+    it("listRepoComponents passes filter params", async () => {
+      const { fn, calls } = mockFetch([{ status: 200, body: { components: [], total: 0 } }]);
+      const client = new OrunClient({ baseUrl: "https://api.example.com", token: "t", fetch: fn });
+      await client.listRepoComponents("987654", { type: "service", limit: 20 });
+      const url = new URL(calls()[0].url);
+      expect(url.searchParams.get("type")).toBe("service");
+      expect(url.searchParams.get("limit")).toBe("20");
+    });
+  });
 });

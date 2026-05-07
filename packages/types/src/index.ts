@@ -173,6 +173,160 @@ export interface CreateCliSessionInput {
   deviceLabel?: string;
 }
 
+// ─── Catalog Types ───────────────────────────────────────────────────────────
+
+export type CatalogComponentStatus = "healthy" | "failing" | "stale" | "unknown";
+
+export type CatalogRelationType =
+  | "depends_on"
+  | "provides_api"
+  | "consumes_api"
+  | "uses_resource"
+  | "deploys_with";
+
+export type CatalogRelationTargetKind =
+  | "component"
+  | "api"
+  | "resource"
+  | "composition"
+  | "job";
+
+export interface CatalogEnvironmentState {
+  name: string;
+  status?: CatalogComponentStatus;
+  latestJobId?: string;
+}
+
+export interface CatalogComponentRelation {
+  relationType: CatalogRelationType;
+  targetKind: CatalogRelationTargetKind;
+  targetRef: string;
+  environment?: string;
+  jobId?: string;
+}
+
+export interface ComponentState {
+  apiVersion: "orun.io/v1";
+  kind: "ComponentState";
+  source: {
+    provider: "github";
+    repository: string;
+    repoId: string;
+    branch?: string;
+    commit: string;
+    workflowRunId?: string;
+    workflowRef?: string;
+    prNumber?: number;
+  };
+  component: {
+    id: string;
+    name: string;
+    title?: string;
+    description?: string;
+    type: string;
+    owner?: string;
+    system?: string;
+    lifecycle?: string;
+    tags: string[];
+    path: string;
+  };
+  environments: CatalogEnvironmentState[];
+  relations: CatalogComponentRelation[];
+  plan?: {
+    planId?: string;
+    checksum: string;
+    changed: boolean;
+    affectedJobs: string[];
+  };
+  pr?: {
+    number: number;
+    title?: string;
+    changedFiles: string[];
+  };
+  generatedAt: string;
+}
+
+export interface CatalogSyncEnvelope {
+  apiVersion: "orun.io/v1";
+  kind: "CatalogSyncEnvelope";
+  uploadId: string;
+  schemaVersion: string;
+  source: {
+    provider: "github";
+    repo: string;
+    repoId: string;
+    commit: string;
+    branch?: string;
+    workflowRunId?: string;
+    workflowRef?: string;
+    prNumber?: number;
+  };
+  plan?: {
+    id?: string;
+    checksum: string;
+    objectRef?: string;
+  };
+  components: ComponentState[];
+  generatedAt: string;
+}
+
+export interface CatalogSyncAccepted {
+  uploadId: string;
+  acceptedAt: string;
+  componentCount: number;
+}
+
+export interface CatalogComponentSummary {
+  componentId: string;
+  namespace: Namespace;
+  repoId: string;
+  repoFullName: string;
+  name: string;
+  title?: string;
+  description?: string;
+  type: string;
+  owner?: string;
+  system?: string;
+  lifecycle?: string;
+  repoPath: string;
+  tags: string[];
+  environments: CatalogEnvironmentState[];
+  latestPlanId?: string;
+  latestPlanChecksum?: string;
+  latestCommitSha: string;
+  latestStatus: CatalogComponentStatus;
+  currentStateRef: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface CatalogComponentDetail extends CatalogComponentSummary {
+  relations: CatalogComponentRelation[];
+}
+
+export interface CatalogComponentEvent {
+  eventId: string;
+  componentId: string;
+  namespace: Namespace;
+  uploadId: string;
+  eventType: "created" | "updated" | "changed" | "pr_changed" | "synced";
+  commitSha: string;
+  prNumber?: number;
+  summary?: string;
+  payloadRef?: string;
+  createdAt: string;
+}
+
+export interface CatalogComponentListResponse {
+  components: CatalogComponentSummary[];
+  total: number;
+}
+
+export interface CatalogComponentRelationsResponse {
+  outgoing: CatalogComponentRelation[];
+  incoming: Array<CatalogComponentRelation & { sourceComponentId: string; sourceName: string }>;
+}
+
 // ─── Error Types ─────────────────────────────────────────────────────────────
 
 export type ErrorCode =

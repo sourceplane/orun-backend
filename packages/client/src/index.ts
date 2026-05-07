@@ -1,4 +1,8 @@
-import type { Run, Job, ApiError, LinkRepoFromSessionResponse } from "@orun/types";
+import type {
+  Run, Job, ApiError, LinkRepoFromSessionResponse,
+  CatalogSyncEnvelope, CatalogSyncAccepted, CatalogComponentListResponse,
+  CatalogComponentDetail, CatalogComponentEvent, CatalogComponentRelationsResponse,
+} from "@orun/types";
 
 export class OrunClientError extends Error {
   public readonly status: number;
@@ -162,5 +166,71 @@ export class OrunClient {
 
   async getLog(runId: string, jobId: string): Promise<string> {
     return this.request("GET", `/v1/runs/${encodeURIComponent(runId)}/logs/${encodeURIComponent(jobId)}`, { expectText: true }) as Promise<string>;
+  }
+
+  async syncCatalog(envelope: CatalogSyncEnvelope): Promise<CatalogSyncAccepted> {
+    return this.request("POST", "/v1/catalog/sync", { body: envelope }) as Promise<CatalogSyncAccepted>;
+  }
+
+  async listCatalogComponents(params?: {
+    q?: string;
+    repoId?: string;
+    type?: string;
+    owner?: string;
+    system?: string;
+    tag?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<CatalogComponentListResponse> {
+    const query: Record<string, string> = {};
+    if (params?.q) query.q = params.q;
+    if (params?.repoId) query.repoId = params.repoId;
+    if (params?.type) query.type = params.type;
+    if (params?.owner) query.owner = params.owner;
+    if (params?.system) query.system = params.system;
+    if (params?.tag) query.tag = params.tag;
+    if (params?.status) query.status = params.status;
+    if (params?.limit !== undefined) query.limit = String(params.limit);
+    if (params?.offset !== undefined) query.offset = String(params.offset);
+    return this.request("GET", "/v1/catalog/components", { query }) as Promise<CatalogComponentListResponse>;
+  }
+
+  async getCatalogComponent(componentId: string): Promise<{ component: CatalogComponentDetail }> {
+    return this.request("GET", `/v1/catalog/components/${encodeURIComponent(componentId)}`) as Promise<{ component: CatalogComponentDetail }>;
+  }
+
+  async getCatalogComponentHistory(componentId: string): Promise<{ events: CatalogComponentEvent[] }> {
+    return this.request("GET", `/v1/catalog/components/${encodeURIComponent(componentId)}/history`) as Promise<{ events: CatalogComponentEvent[] }>;
+  }
+
+  async getCatalogComponentRuns(componentId: string): Promise<{ runs: Run[] }> {
+    return this.request("GET", `/v1/catalog/components/${encodeURIComponent(componentId)}/runs`) as Promise<{ runs: Run[] }>;
+  }
+
+  async getCatalogComponentDependencies(componentId: string): Promise<CatalogComponentRelationsResponse> {
+    return this.request("GET", `/v1/catalog/components/${encodeURIComponent(componentId)}/dependencies`) as Promise<CatalogComponentRelationsResponse>;
+  }
+
+  async listRepoComponents(repoId: string, params?: {
+    q?: string;
+    type?: string;
+    owner?: string;
+    system?: string;
+    tag?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<CatalogComponentListResponse> {
+    const query: Record<string, string> = {};
+    if (params?.q) query.q = params.q;
+    if (params?.type) query.type = params.type;
+    if (params?.owner) query.owner = params.owner;
+    if (params?.system) query.system = params.system;
+    if (params?.tag) query.tag = params.tag;
+    if (params?.status) query.status = params.status;
+    if (params?.limit !== undefined) query.limit = String(params.limit);
+    if (params?.offset !== undefined) query.offset = String(params.offset);
+    return this.request("GET", `/v1/repos/${encodeURIComponent(repoId)}/components`, { query }) as Promise<CatalogComponentListResponse>;
   }
 }

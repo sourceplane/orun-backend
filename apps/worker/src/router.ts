@@ -7,6 +7,7 @@ import { handleCreateRun, handleListRuns, handleGetRun } from "./handlers/runs";
 import { handleClaimJob, handleUpdateJob, handleHeartbeat, handleRunnable, handleListJobs, handleJobStatus } from "./handlers/jobs";
 import { handleUploadLog, handleGetLog } from "./handlers/logs";
 import { handleCreateAccount, handleGetAccount, handleLinkRepo, handleListLinkedRepos, handleUnlinkRepo, handleLinkRepoFromSession } from "./handlers/accounts";
+import { handleCatalogSync, handleListCatalogComponents, handleGetCatalogComponent, handleGetCatalogComponentHistory, handleGetCatalogComponentRuns, handleGetCatalogComponentDependencies, handleListRepoComponents } from "./handlers/catalog";
 import { checkRateLimit } from "./rate-limit";
 
 interface RouteContext {
@@ -61,6 +62,13 @@ const routes: Route[] = [
   route("POST", "/v1/runs/:runId/jobs/:jobId/heartbeat", handleHeartbeat, "oidc_or_session", true),
   route("POST", "/v1/runs/:runId/logs/:jobId", handleUploadLog, "oidc_or_session", true),
   route("GET", "/v1/runs/:runId/logs/:jobId", handleGetLog, "oidc_or_session", true),
+  route("POST", "/v1/catalog/sync", handleCatalogSync, "oidc", true),
+  route("GET", "/v1/catalog/components", handleListCatalogComponents, "session", true),
+  route("GET", "/v1/catalog/components/:componentId", handleGetCatalogComponent, "session", true),
+  route("GET", "/v1/catalog/components/:componentId/history", handleGetCatalogComponentHistory, "session", true),
+  route("GET", "/v1/catalog/components/:componentId/runs", handleGetCatalogComponentRuns, "session", true),
+  route("GET", "/v1/catalog/components/:componentId/dependencies", handleGetCatalogComponentDependencies, "session", true),
+  route("GET", "/v1/repos/:repoId/components", handleListRepoComponents, "session", true),
 ];
 
 export async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {

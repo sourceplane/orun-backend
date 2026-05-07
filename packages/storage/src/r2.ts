@@ -1,5 +1,5 @@
 import type { Plan } from "@orun/types";
-import { runLogPath, planPath } from "@orun/types/paths";
+import { runLogPath, planPath, catalogEnvelopePath, catalogComponentStatePath } from "@orun/types/paths";
 
 export class R2Storage {
   constructor(private bucket: R2Bucket) {}
@@ -75,5 +75,21 @@ export class R2Storage {
       }
       cursor = listed.truncated ? listed.cursor : undefined;
     } while (cursor);
+  }
+
+  async writeCatalogEnvelope(namespaceId: string, uploadId: string, envelope: unknown): Promise<string> {
+    const key = catalogEnvelopePath(namespaceId, uploadId);
+    await this.bucket.put(key, JSON.stringify(envelope), {
+      httpMetadata: { contentType: "application/json; charset=utf-8" },
+    });
+    return key;
+  }
+
+  async writeCatalogComponentState(namespaceId: string, commitSha: string, componentName: string, state: unknown): Promise<string> {
+    const key = catalogComponentStatePath(namespaceId, commitSha, componentName);
+    await this.bucket.put(key, JSON.stringify(state), {
+      httpMetadata: { contentType: "application/json; charset=utf-8" },
+    });
+    return key;
   }
 }

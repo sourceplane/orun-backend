@@ -9,3 +9,11 @@ export function planPath(namespaceId: string, checksum: string): string {
 export function coordinatorKey(namespaceId: string, runId: string): string {
   return `${namespaceId}:${runId}`;
 }
+
+export function catalogEnvelopePath(namespaceId: string, uploadId: string): string {
+  return `${namespaceId}/catalog/uploads/${uploadId}/catalog-sync-envelope.json`;
+}
+
+export function catalogComponentStatePath(namespaceId: string, commitSha: string, componentName: string): string {
+  return `${namespaceId}/catalog/commits/${commitSha}/components/${componentName}.json`;
+}
