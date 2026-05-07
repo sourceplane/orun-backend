@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 14,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1"],
+  "current_task": 15,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14],
   "repo_health": "yellow",
-  "next_focus": "task-0014-dashboard-catalog-ui",
+  "next_focus": "task-0015-cli-bootstrap",
   "last_verified": "2026-05-07",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -41,6 +41,9 @@
     "Next dashboard development focus: Task 0013 catalog index foundation. Build backend/shared/client catalog contracts before a large dashboard UI rewrite.",
     "Task 0013 verifier FAIL on 2026-05-07: implementation and CI are mostly green, but POST /v1/catalog/sync accepts envelopes with missing component.path, returns 202, and then fails async normalization against catalog_components.repo_path NOT NULL. Report written to ai/reports/task-0013-verifier.md. Next move: Task 0013.1 small validation remediation.",
     "Task 0013.1 verifier prompt produced on 2026-05-07: verify commit bd555ef on main, CI run 25510722727, and the synchronous catalog sync validation remediation before advancing to Task 0014.",
-    "Task 0013.1 verified PASS on 2026-05-07: synchronous rejection of missing/non-string component.path and non-array components confirmed before ctx.waitUntil; 4 regression tests added; 209 worker tests pass; CI run 25510722727 success on all 4 jobs; live smoke checks clean. Advancing to task-0014-dashboard-catalog-ui."
+    "Task 0013.1 verified PASS on 2026-05-07: synchronous rejection of missing/non-string component.path and non-array components confirmed before ctx.waitUntil; 4 regression tests added; 209 worker tests pass; CI run 25510722727 success on all 4 jobs; live smoke checks clean. Advancing to task-0014-dashboard-catalog-ui.",
+    "Task 0014 implementer prompt produced on 2026-05-07: build the catalog-first dashboard UI in apps/dashboard using the Task 0013 catalog APIs while preserving existing run/job/log workflows.",
+    "Task 0014 verifier prompt produced on 2026-05-07: verify PR #33 head 42bf3d4 and CI run 25512977088 for the catalog-first dashboard UI, including local checks, CI log inspection, and browser visual QA.",
+    "Task 0014 verified PASS on 2026-05-07: catalog-first dashboard UI (PR #33). Authenticated shell defaults to Catalog, all views backed by @orun/client, OAuth/session security intact, 57 RTL tests pass, CI run 25512977088 green (9 meaningful Pages steps per env). Live browser QA deferred to post-merge Pages deploy. Advancing to task-0015-cli-bootstrap."
   ]
 }
