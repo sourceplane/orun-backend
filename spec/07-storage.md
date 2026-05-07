@@ -202,6 +202,102 @@ Requirements:
 - Expired or revoked refresh tokens must not mint access tokens.
 - A scheduled GC may delete expired CLI sessions after an audit retention window.
 
+#### Catalog Index Migration
+
+Catalog storage is defined in detail in `spec/12-catalog-index.md`. The storage package must grow a D1 catalog surface that keeps raw immutable payloads in R2 and only queryable metadata in D1.
+
+Add a new migration after the current local namespace migration:
+
+```sql
+CREATE TABLE catalog_uploads (
+  upload_id       TEXT PRIMARY KEY,
+  namespace_id    TEXT NOT NULL,
+  repo_id         TEXT NOT NULL,
+  repo_full_name  TEXT NOT NULL,
+  commit_sha      TEXT NOT NULL,
+  branch          TEXT,
+  workflow_run_id TEXT,
+  workflow_ref    TEXT,
+  pr_number       INTEGER,
+  envelope_ref    TEXT NOT NULL,
+  component_count INTEGER NOT NULL,
+  created_at      TEXT NOT NULL,
+  FOREIGN KEY (namespace_id) REFERENCES namespaces(namespace_id)
+);
+
+CREATE TABLE catalog_components (
+  component_id         TEXT PRIMARY KEY,
+  namespace_id         TEXT NOT NULL,
+  repo_id              TEXT NOT NULL,
+  repo_full_name       TEXT NOT NULL,
+  name                 TEXT NOT NULL,
+  title                TEXT,
+  description          TEXT,
+  type                 TEXT NOT NULL,
+  owner                TEXT,
+  system               TEXT,
+  lifecycle            TEXT,
+  repo_path            TEXT NOT NULL,
+  tags_json            TEXT NOT NULL,
+  environments_json    TEXT NOT NULL,
+  latest_plan_id       TEXT,
+  latest_plan_checksum TEXT,
+  latest_commit_sha    TEXT NOT NULL,
+  latest_status        TEXT NOT NULL DEFAULT 'unknown',
+  current_state_ref    TEXT NOT NULL,
+  first_seen_at        TEXT NOT NULL,
+  last_seen_at         TEXT NOT NULL,
+  FOREIGN KEY (namespace_id) REFERENCES namespaces(namespace_id)
+);
+
+CREATE TABLE catalog_component_relations (
+  relation_id         TEXT PRIMARY KEY,
+  source_component_id TEXT NOT NULL,
+  relation_type       TEXT NOT NULL,
+  target_kind         TEXT NOT NULL,
+  target_ref          TEXT NOT NULL,
+  environment         TEXT,
+  job_id              TEXT,
+  last_seen_at        TEXT NOT NULL,
+  FOREIGN KEY (source_component_id) REFERENCES catalog_components(component_id)
+);
+
+CREATE TABLE catalog_component_events (
+  event_id     TEXT PRIMARY KEY,
+  component_id TEXT NOT NULL,
+  namespace_id TEXT NOT NULL,
+  upload_id    TEXT NOT NULL,
+  event_type   TEXT NOT NULL,
+  commit_sha   TEXT NOT NULL,
+  pr_number    INTEGER,
+  summary      TEXT,
+  payload_ref  TEXT,
+  created_at   TEXT NOT NULL,
+  FOREIGN KEY (component_id) REFERENCES catalog_components(component_id),
+  FOREIGN KEY (upload_id) REFERENCES catalog_uploads(upload_id)
+);
+
+CREATE INDEX idx_catalog_components_namespace ON catalog_components(namespace_id, last_seen_at DESC);
+CREATE INDEX idx_catalog_components_repo ON catalog_components(repo_id, name);
+CREATE INDEX idx_catalog_components_owner ON catalog_components(owner);
+CREATE INDEX idx_catalog_components_type ON catalog_components(type);
+CREATE INDEX idx_catalog_events_component ON catalog_component_events(component_id, created_at DESC);
+CREATE INDEX idx_catalog_relations_target ON catalog_component_relations(target_kind, target_ref);
+```
+
+Catalog D1 rows are derived. Replaying the same `upload_id` must be idempotent.
+
+#### Catalog R2 Paths
+
+All catalog R2 paths must start with the effective namespace ID:
+
+```text
+{namespaceId}/catalog/uploads/{uploadId}/catalog-sync-envelope.json
+{namespaceId}/catalog/commits/{commitSha}/components/{componentName}.json
+{namespaceId}/catalog/commits/{commitSha}/plan.json
+{namespaceId}/catalog/prs/{number}/component-diff.json
+```
+
 ### D1Index Interface
 
 ```typescript
@@ -241,6 +337,15 @@ export class D1Index {
   async getCliSessionByRefreshHash(refreshTokenHash: string): Promise<CliSession | null>;
   async markCliSessionUsed(sessionId: string, usedAt: string): Promise<void>;
   async revokeCliSession(sessionId: string, revokedAt: string): Promise<void>;
+
+  /** Store and query normalized catalog rows. See spec/12-catalog-index.md. */
+  async recordCatalogUpload(input: CatalogUploadInput): Promise<CatalogSyncAccepted>;
+  async upsertCatalogComponent(input: CatalogComponentUpsert): Promise<void>;
+  async replaceCatalogRelations(componentId: string, relations: CatalogRelationInput[]): Promise<void>;
+  async listCatalogComponents(filter: CatalogComponentFilter): Promise<CatalogComponentListResponse>;
+  async getCatalogComponent(visibleNamespaceIds: string[], componentId: string): Promise<CatalogComponentDetail | null>;
+  async listCatalogComponentEvents(visibleNamespaceIds: string[], componentId: string): Promise<CatalogComponentEvent[]>;
+  async listCatalogComponentRelations(visibleNamespaceIds: string[], componentId: string): Promise<CatalogComponentRelationsResponse>;
 }
 
 export type IndexedJobInput = Pick<
@@ -284,6 +389,14 @@ export function planPath(namespaceId: string, checksum: string): string {
 
 export function coordinatorKey(namespaceId: string, runId: string): string {
   return `${namespaceId}:${runId}`;
+}
+
+export function catalogEnvelopePath(namespaceId: string, uploadId: string): string {
+  return `${namespaceId}/catalog/uploads/${uploadId}/catalog-sync-envelope.json`;
+}
+
+export function catalogComponentStatePath(namespaceId: string, commitSha: string, componentName: string): string {
+  return `${namespaceId}/catalog/commits/${commitSha}/components/${componentName}.json`;
 }
 ```
 

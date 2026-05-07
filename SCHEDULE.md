@@ -42,7 +42,13 @@ The critical design insight driving this order: **build the cloud control plane 
  [12] Local Remote-State Conformance
                │
                ▼
- [13] CLI Bootstrap
+ [13] Dashboard Catalog Index
+               │
+               ▼
+ [14] Dashboard Catalog UI
+               │
+               ▼
+ [15] CLI Bootstrap
 ```
 
 Tasks [03], [04], [05] are independent and can be delegated in parallel after [02] completes.
@@ -293,7 +299,43 @@ Add a fast local verification path for remote-state behavior using the live back
 - It proves the same remote-state claim/update/heartbeat/log/status behavior used in GHA.
 - Website/docs examples are copyable and do not mention GitHub PATs as the primary auth model.
 
-### Task 13 — CLI Bootstrap (`orun backend init`)
+## Phase 4 — Orun Dashboard as Catalog + CI Intelligence
+
+The Task 0009 dashboard is an operational first slice: login, linked repos, runs, jobs, and logs. The product direction now expands it into a Git-native software catalog plus CI intelligence layer, backed by the same plan engine that understands components, environments, dependencies, changed jobs, run history, and logs.
+
+### Task 13 — Dashboard Catalog Index Foundation
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/03-types-package.md`, `spec/04-worker-api.md`, `spec/07-storage.md`, `spec/11-dashboard-ui.md`, `spec/12-catalog-index.md`
+**Depends on**: Task 12 follow-up verification reaching green, unless the user explicitly prioritizes dashboard foundation while Task 12 remains yellow.
+
+Implement the catalog data foundation:
+- shared catalog types and path helpers
+- D1 migration for catalog uploads, components, relations, and events
+- R2 raw envelope/component-state storage helpers
+- `POST /v1/catalog/sync` for GitHub Actions OIDC uploads
+- session-read catalog endpoints
+- `@orun/client` catalog methods
+- fixtures and tests proving OIDC repo matching, idempotent upload, path validation, and linked-repo read isolation
+
+The first implementation may normalize synchronously or with `ctx.waitUntil`. Do not add Cloudflare Queue bindings until a dedicated queue task exists.
+
+### Task 14 — Dashboard Catalog UI
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/11-dashboard-ui.md`, `spec/12-catalog-index.md`
+**Depends on**: Task 13
+
+Turn `apps/dashboard` from run-first operations UI into a catalog-first product surface:
+- authenticated shell with Catalog, Runs, Repositories, Settings
+- catalog table/card toggle
+- filters for repo, owner, type, status, and search
+- component detail overview
+- dependencies and recent runs sections
+- repository sync health view
+- keep existing run/job/log views intact
+
+### Task 15 — CLI Bootstrap (`orun backend init`)
 
 Implement auto-provisioning of Cloudflare resources from the CLI:
 - Cloudflare REST API client in Go
@@ -336,6 +378,15 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 - [ ] Multiple local processes sharing `ORUN_EXEC_ID` prove duplicate claim safety and dependency waiting through the backend
 - [ ] Dashboard sessions remain read-oriented; CLI sessions and OIDC are the only mutable coordination identities
 - [ ] No docs or examples require GitHub PATs for normal local remote-state usage
+
+### Phase 4 dashboard catalog foundation complete when:
+
+- [ ] GitHub Actions OIDC can upload a catalog sync envelope for the calling repo
+- [ ] Raw catalog envelopes are stored in R2 under namespace-scoped paths
+- [ ] D1 stores queryable component, relation, upload, and event rows
+- [ ] Dashboard sessions can list only components from linked canonical repo namespaces
+- [ ] The dashboard's first screen is the catalog, with existing run/log views preserved
+- [ ] Component detail answers ownership, repo/path, environment, dependency, latest run, and raw artifact questions
 
 ---
 

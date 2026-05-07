@@ -67,6 +67,20 @@ All endpoints are prefixed `/v1/`. The Worker returns JSON for all responses.
 | `GET` | `/v1/accounts/repos` | Session | List linked repos |
 | `DELETE` | `/v1/accounts/repos/:namespaceId` | Session | Unlink a repo |
 
+### Catalog
+
+The catalog API supports the dashboard product model in `spec/11-dashboard-ui.md` and the ingestion/indexing contract in `spec/12-catalog-index.md`.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/catalog/sync` | OIDC | Upload a catalog sync envelope for the calling repo namespace |
+| `GET` | `/v1/catalog/components` | Session | List visible catalog components across linked repo namespaces |
+| `GET` | `/v1/catalog/components/:componentId` | Session | Get a visible component detail record |
+| `GET` | `/v1/catalog/components/:componentId/history` | Session | Get component sync/change events |
+| `GET` | `/v1/catalog/components/:componentId/runs` | Session | Get recent runs touching the component |
+| `GET` | `/v1/catalog/components/:componentId/dependencies` | Session | Get incoming and outgoing component relations |
+| `GET` | `/v1/repos/:repoId/components` | Session | List visible components for one repo |
+
 #### `POST /v1/accounts/repos/link`
 
 Allows a local Orun CLI session to resolve the caller's local remote-state namespace for a GitHub repo without sending a GitHub OAuth access token. This endpoint closes the bootstrapping gap for `orun run --remote-state` on developer machines.
@@ -332,6 +346,35 @@ The Worker must not drop `runnerId`; the coordinator uses it to reject updates f
 
 ---
 
+### `POST /v1/catalog/sync`
+
+**Request body**: `CatalogSyncEnvelope`
+
+**Actions**:
+1. Require verified GitHub Actions OIDC. Reject dashboard sessions and CLI sessions.
+2. Require `envelope.source.repoId` to equal the OIDC `repository_id` claim and `envelope.source.repo` to equal the OIDC `repository` claim.
+3. Validate supported `schemaVersion`, bounded body size, non-empty `uploadId`, non-empty commit SHA, and component paths that are relative paths inside the repo.
+4. Upsert the canonical repo namespace as `kind: "repo"`.
+5. Store the raw envelope in R2 using the catalog path helpers from `spec/12-catalog-index.md`.
+6. Normalize component, relation, upload, and event rows into D1. The first implementation may do this synchronously or with `ctx.waitUntil`; do not add a Queue binding until a queue task exists.
+7. Treat duplicate `uploadId` as idempotent success.
+
+**Response**: `202 { uploadId: string; acceptedAt: string; componentCount: number }`
+
+---
+
+### Catalog read endpoints
+
+**Actions**:
+1. Require a dashboard or read-capable session.
+2. Resolve visible canonical repo namespace IDs from the caller's linked repos.
+3. Query only catalog rows whose `namespace_id` is in that visible set.
+4. Return typed response envelopes from `@orun/types`.
+
+Catalog reads must not expose local CLI namespaces by default. Local namespaces are for laptop remote-state experiments and are not part of the canonical software catalog.
+
+---
+
 ## Error Handling
 
 Every handler is wrapped in a try-catch. Errors are formatted as `ApiError`:
@@ -402,3 +445,7 @@ export default {
   - Rate limit exceeded → 429
   - DO returns `claimed: false`
   - Log upload and retrieval
+  - Catalog sync rejects repo ID/repo slug mismatches
+  - Catalog sync rejects dashboard and CLI session writes
+  - Catalog sync is idempotent by `uploadId`
+  - Catalog reads only return components from linked canonical repo namespaces

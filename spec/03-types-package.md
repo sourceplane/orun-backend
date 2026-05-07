@@ -23,10 +23,12 @@ The current implementation intentionally keeps a small public API contract in `@
 
 ```typescript
 export interface Namespace {
-  /** Immutable GitHub repository numeric ID — canonical storage key */
+  /** Immutable storage key: GitHub repo ID for canonical repo namespaces, local:user:<id>:repo:<id> for local CLI namespaces */
   namespaceId: string;
-  /** Human-readable org/repo slug — display only, mutable */
+  /** Human-readable display slug. Mutable for repo namespaces. */
   namespaceSlug: string;
+  /** Namespace trust boundary. Existing rows default to repo. */
+  kind?: "repo" | "local";
 }
 ```
 
@@ -109,6 +111,8 @@ export interface CreateRunRequest {
   plan: Plan;
   /** Optional deterministic run id used by distributed runners for the same plan. */
   runId?: string;
+  /** Local CLI sessions send this so the backend can derive a local namespace. */
+  repoFullName?: string;
   dryRun?: boolean;
   triggerType?: "ci" | "manual" | "api";
   actor?: string;
@@ -118,6 +122,15 @@ export interface CreateRunResponse {
   runId: string;
   status: RunStatus;
   createdAt: string;
+}
+
+export interface LinkRepoFromSessionResponse {
+  namespaceKind: "local";
+  namespaceId: string;
+  namespaceSlug: string;
+  repoId: string;
+  repoFullName: string;
+  linkedAt: string;
 }
 ```
 
@@ -179,6 +192,166 @@ export interface ReadLogResponse {
 
 ---
 
+## Catalog Types
+
+Catalog contracts are implemented to support `spec/11-dashboard-ui.md` and `spec/12-catalog-index.md`.
+
+```typescript
+export type CatalogComponentStatus = "healthy" | "failing" | "stale" | "unknown";
+
+export type CatalogRelationType =
+  | "depends_on"
+  | "provides_api"
+  | "consumes_api"
+  | "uses_resource"
+  | "deploys_with";
+
+export type CatalogRelationTargetKind =
+  | "component"
+  | "api"
+  | "resource"
+  | "composition"
+  | "job";
+
+export interface CatalogEnvironmentState {
+  name: string;
+  status?: CatalogComponentStatus;
+  latestJobId?: string;
+}
+
+export interface CatalogComponentRelation {
+  relationType: CatalogRelationType;
+  targetKind: CatalogRelationTargetKind;
+  targetRef: string;
+  environment?: string;
+  jobId?: string;
+}
+
+export interface ComponentState {
+  apiVersion: "orun.io/v1";
+  kind: "ComponentState";
+  source: {
+    provider: "github";
+    repository: string;
+    repoId: string;
+    branch?: string;
+    commit: string;
+    workflowRunId?: string;
+    workflowRef?: string;
+    prNumber?: number;
+  };
+  component: {
+    id: string;
+    name: string;
+    title?: string;
+    description?: string;
+    type: string;
+    owner?: string;
+    system?: string;
+    lifecycle?: string;
+    tags: string[];
+    path: string;
+  };
+  environments: CatalogEnvironmentState[];
+  relations: CatalogComponentRelation[];
+  plan?: {
+    planId?: string;
+    checksum: string;
+    changed: boolean;
+    affectedJobs: string[];
+  };
+  pr?: {
+    number: number;
+    title?: string;
+    changedFiles: string[];
+  };
+  generatedAt: string;
+}
+
+export interface CatalogSyncEnvelope {
+  apiVersion: "orun.io/v1";
+  kind: "CatalogSyncEnvelope";
+  uploadId: string;
+  schemaVersion: string;
+  source: {
+    provider: "github";
+    repo: string;
+    repoId: string;
+    commit: string;
+    branch?: string;
+    workflowRunId?: string;
+    workflowRef?: string;
+    prNumber?: number;
+  };
+  plan?: {
+    id?: string;
+    checksum: string;
+    objectRef?: string;
+  };
+  components: ComponentState[];
+  generatedAt: string;
+}
+
+export interface CatalogSyncAccepted {
+  uploadId: string;
+  acceptedAt: string;
+  componentCount: number;
+}
+
+export interface CatalogComponentSummary {
+  componentId: string;
+  namespace: Namespace;
+  repoId: string;
+  repoFullName: string;
+  name: string;
+  title?: string;
+  description?: string;
+  type: string;
+  owner?: string;
+  system?: string;
+  lifecycle?: string;
+  repoPath: string;
+  tags: string[];
+  environments: CatalogEnvironmentState[];
+  latestPlanId?: string;
+  latestPlanChecksum?: string;
+  latestCommitSha: string;
+  latestStatus: CatalogComponentStatus;
+  currentStateRef: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface CatalogComponentDetail extends CatalogComponentSummary {
+  relations: CatalogComponentRelation[];
+}
+
+export interface CatalogComponentEvent {
+  eventId: string;
+  componentId: string;
+  namespace: Namespace;
+  uploadId: string;
+  eventType: "created" | "updated" | "changed" | "pr_changed" | "synced";
+  commitSha: string;
+  prNumber?: number;
+  summary?: string;
+  payloadRef?: string;
+  createdAt: string;
+}
+
+export interface CatalogComponentListResponse {
+  components: CatalogComponentSummary[];
+  total: number;
+}
+
+export interface CatalogComponentRelationsResponse {
+  outgoing: CatalogComponentRelation[];
+  incoming: Array<CatalogComponentRelation & { sourceComponentId: string; sourceName: string }>;
+}
+```
+
+---
+
 ## Auth Types
 
 ### OIDC Claims (from GitHub Actions JWT)
@@ -210,6 +383,9 @@ export interface SessionClaims {
   sub: string;                        // GitHub user login
   /** Numeric namespace IDs this user may read */
   allowedNamespaceIds: string[];
+  sessionKind?: "dashboard" | "cli";
+  tokenUse?: "access";
+  githubUserId?: string;              // immutable GitHub numeric user ID for CLI local namespaces
   exp: number;
   iat: number;
 }
@@ -250,6 +426,12 @@ export function planPath(namespaceId: string, checksum: string): string;
 
 /** DO key for a run coordinator */
 export function coordinatorKey(namespaceId: string, runId: string): string;
+
+/** R2 path for a catalog sync envelope */
+export function catalogEnvelopePath(namespaceId: string, uploadId: string): string;
+
+/** R2 path for a generated component state snapshot */
+export function catalogComponentStatePath(namespaceId: string, commitSha: string, componentName: string): string;
 ```
 
 ---
@@ -261,11 +443,18 @@ import type { DurableObjectNamespace, R2Bucket, D1Database } from "@cloudflare/w
 
 export interface Env {
   COORDINATOR: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace;
   STORAGE: R2Bucket;
   DB: D1Database;
   GITHUB_JWKS_URL: string;
   GITHUB_OIDC_AUDIENCE: string;
+  ORUN_SESSION_SECRET?: string;
   ORUN_DEPLOY_TOKEN?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  ORUN_PUBLIC_URL?: string;
+  ORUN_DASHBOARD_URL?: string;
+  GITHUB_DEVICE_CLIENT_ID?: string;
 }
 ```
 
