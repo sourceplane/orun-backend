@@ -45,7 +45,7 @@ Do not reintroduce the older `orun run --remote --job <id>` contract. The new us
 |------|------------|----------|
 | Local state | default `orun run` | Uses the filesystem state store under `.orun/executions/{execID}`. No backend HTTP calls. |
 | Remote state in GitHub Actions | `orun run --remote-state` with `GITHUB_ACTIONS=true` | Uses GitHub OIDC to authenticate the repo runner, then uses orun-backend for run/job state, dependency checks, heartbeats, and log upload. Steps still execute locally through the selected runner. |
-| Remote state on a developer machine | `orun run --remote-state` outside GitHub Actions | Uses `orun auth login` / `orun cloud link` human GitHub OAuth credentials to authenticate, then uses the same backend coordination APIs as GitHub Actions. |
+| Remote state on a developer machine | `orun run --remote-state` outside GitHub Actions | Uses `orun auth login` / `orun cloud link` human GitHub OAuth credentials to authenticate, then uses the same backend coordination APIs as GitHub Actions under a user-scoped local namespace. |
 | Intent-enabled remote state | `intent.yaml` config | Uses remote state without requiring the CLI flag. |
 
 Environment variable alternative:
@@ -64,6 +64,14 @@ Recommended precedence:
 The CLI should also support `--backend-url` and `ORUN_BACKEND_URL` for the backend endpoint.
 
 Remote state is not a CI-only feature. Local remote-state mode is required so developers can verify distributed claim/dependency/log behavior quickly from a laptop by launching multiple local `orun run --remote-state --job ...` processes against the same `ORUN_EXEC_ID`. Outside GitHub Actions, the CLI must authenticate through GitHub OAuth/device login and Orun-issued tokens, not GitHub Actions OIDC and not long-lived GitHub PATs.
+
+Local remote-state intentionally does **not** write into the canonical repo namespace used by GitHub Actions. The backend derives a local namespace from immutable GitHub IDs:
+
+```text
+local:user:<githubUserId>:repo:<repoId>
+```
+
+This keeps laptop experimentation tied to the human user while still using the same Durable Object, R2, D1, dependency, heartbeat, status, and log code paths.
 
 ---
 
@@ -227,14 +235,14 @@ Dependency responses:
 
 Use exponential backoff with jitter for dependency polling, starting at 2 seconds and capping at 60 seconds. Default dependency wait timeout: 30 minutes, configurable later.
 
-The remote flow is identical for GitHub Actions and local developer machines after authentication:
+The remote flow uses the same coordination API surface after authentication, but not the same namespace trust boundary:
 
 ```text
-GitHub Actions: GitHub OIDC JWT -> Worker verifies repo workload -> run-scoped coordination
-Local machine: Orun CLI session JWT -> Worker verifies human namespace access -> same coordination APIs
+GitHub Actions: GitHub OIDC JWT -> Worker verifies repo workload -> canonical repo namespace -> run-scoped coordination
+Local machine: Orun CLI session JWT -> Worker verifies human user + cached repo ID -> user-scoped local namespace -> same coordination APIs
 ```
 
-The runner identity remains visible in `runnerId`; the actor is the GitHub Actions actor for OIDC runs and the GitHub login for local CLI runs.
+The runner identity remains visible in `runnerId`; the actor is the GitHub Actions actor for OIDC runs and the GitHub login for local CLI runs. Local runs are not clubbed with repo job execution. Future repo-delegated local execution must be added through an explicit policy model rather than by reusing canonical repo namespaces.
 
 ---
 
@@ -450,7 +458,9 @@ POST /v1/runs/{runID}/logs/{jobID}
 GET  /v1/runs/{runID}/logs/{jobID}
 ```
 
-`POST /v1/runs` must accept an optional deterministic `runId` in `CreateRunRequest`. If a run already exists for the same namespace/run ID, return the existing run metadata rather than failing.
+`POST /v1/runs` must accept an optional deterministic `runId` in `CreateRunRequest`. If a run already exists for the same effective namespace/run ID, return the existing run metadata rather than failing.
+
+For GitHub Actions, the effective namespace comes from verified OIDC `repository_id`. For local CLI sessions, the CLI sends the detected `repoFullName` or a backend-returned local namespace reference, and the Worker derives `local:user:<githubUserId>:repo:<repoId>` server-side. A local CLI session must never be allowed to create a run under a canonical repo namespace.
 
 Update requests must include `runnerId` and be forwarded to the coordinator without dropping it.
 
@@ -485,7 +495,7 @@ Logout: `orun auth logout` revokes the backend refresh token and removes local c
 Token debug: `orun auth token --audience orun-backend` prints or copies a short-lived Orun access token only with explicit user intent.
 ```
 
-During `orun auth login` (both browser OAuth and device flow), the backend discovers all admin-accessible GitHub repos and upserts their `(namespace_id, namespace_slug)` pairs into the `namespaces` table. This means the CLI does not need to forward a GitHub access token at any later point — namespace resolution is available server-side once the user has logged in.
+During `orun auth login` (both browser OAuth and device flow), the backend captures the immutable numeric GitHub user ID and discovers the repos visible to that user. It stores `(account_id, repo_id, repo_full_name)` in an account-scoped cache while the GitHub OAuth token is available. The CLI does not need to forward a GitHub access token at any later point, and the backend must not authorize local namespace resolution from a globally guessable repo slug.
 
 `orun cloud link` should compose local auth plus repository detection:
 
@@ -493,20 +503,23 @@ During `orun auth login` (both browser OAuth and device flow), the backend disco
 1. Ensure the user is logged in, starting `orun auth login` if needed.
 2. Detect the GitHub remote for the workspace (e.g., git remote get-url origin).
 3. Call POST /v1/accounts/repos/link with { repoFullName: "owner/repo" } using the CLI session token.
-   - The backend resolves the slug to a namespace ID from the session-discovered namespace slugs.
+   - The backend resolves the slug against the caller's account-scoped repo cache.
+   - The backend computes `local:user:<githubUserId>:repo:<repoId>` and returns `namespaceKind: "local"`.
    - No GitHub OAuth access token or PAT is required or used.
-4. Persist the returned namespaceId and backend URL in local orun config (~/.orun/config.yaml).
+4. Persist the returned local namespace ID, namespace kind, repo ID, repo full name, and backend URL in local orun config (~/.orun/config.yaml).
 5. Print a concise success summary.
 ```
 
 **Namespace resolution for local remote-state:**
 
 - GitHub Actions: namespace identity comes from OIDC claims (`repository_id`, `repository`).
-- Local CLI: namespace identity is resolved by calling `POST /v1/accounts/repos/link` with `repoFullName` derived from the current Git remote. The backend matches the slug against namespace rows written during login. The CLI never holds or forwards GitHub OAuth tokens.
+- Local CLI: namespace identity is resolved by calling `POST /v1/accounts/repos/link` with `repoFullName` derived from the current Git remote. The backend matches the slug against the caller's account-scoped repo cache and derives `local:user:<githubUserId>:repo:<repoId>`. The CLI never holds or forwards GitHub OAuth tokens.
 
-If the slug is not found (i.e., the user logged in before the backend deployed this slug-upsert feature), the endpoint returns a `NOT_FOUND` error with guidance to re-run `orun auth login`.
+If the CLI has an older cached namespace ID from before this split, it must invalidate that cache when the backend returns `namespaceKind: "local"` or when a run create fails with `INVALID_REQUEST` for a repo namespace. The retry path should re-run the link step and send `repoFullName` on `POST /v1/runs`.
 
-**Previously**: `orun cloud link` required the repo to be pre-linked via the Orun dashboard, and would fail with "link it in Orun Cloud first" for new repos. This limitation is removed by the `POST /v1/accounts/repos/link` endpoint.
+If the slug is not found (i.e., the user logged in before the backend cached repo IDs, or GitHub visibility has changed), the endpoint returns a `NOT_FOUND` error with guidance to re-run `orun auth login`.
+
+**Previously**: `orun cloud link` required the repo to be pre-linked via the Orun dashboard, and would fail with "link it in Orun Cloud first" for new repos. This limitation is removed by the `POST /v1/accounts/repos/link` endpoint, but the endpoint returns only a user-scoped local namespace. Canonical repo namespaces remain OIDC-only.
 
 Credential storage:
 
@@ -520,6 +533,7 @@ The Go HTTP client must:
 - Set `User-Agent: orun-cli/<version>`.
 - Set `Authorization: Bearer <token>` on every request.
 - Mark local CLI access tokens so the backend can distinguish CLI sessions from dashboard sessions on mutable coordination routes.
+- Send `repoFullName` when creating local remote-state runs so the backend can derive the local namespace. Do not send or cache canonical repo namespace IDs for local run creation.
 - Parse backend `ApiError` JSON bodies.
 - Retry idempotent `5xx` responses with exponential backoff.
 - Use bounded timeouts: 5 seconds connect, 30 seconds read, 60 seconds log upload.
@@ -530,6 +544,7 @@ The CLI must include a local conformance path that exercises the remote-state ba
 
 ```bash
 orun auth login
+orun cloud link
 orun plan --name remote-state-e2e --all
 export ORUN_BACKEND_URL=https://orun-api.sourceplane.ai
 export ORUN_REMOTE_STATE=true
@@ -547,6 +562,7 @@ orun logs --remote-state --exec-id "$ORUN_EXEC_ID" --job foundation@dev.smoke
 The exact script may evolve with fixture job IDs, but it must prove:
 
 - local CLI sessions can claim/update/heartbeat/upload logs through the backend
+- local CLI sessions use a namespace shaped like `local:user:<githubUserId>:repo:<repoId>` and do not touch the canonical repo namespace used by GitHub Actions
 - duplicate local processes targeting the same job do not both execute it
 - dependency waiting polls `/runnable` instead of failing due to empty local state
 - status and logs work from a separate local command
@@ -560,6 +576,7 @@ The local auth model must not paint Orun Cloud into a corner. Later SaaS dispatc
 
 ```text
 Human user session       -> authorizes catalog publishing and UI dispatch request
+Local user namespace     -> supports laptop remote-state without repo workload authority
 Signed ExecutionRequest  -> seals requested component/job/env/plan intent
 Repo workflow identity   -> GitHub OIDC proves the runner actually belongs to the repo
 Run-scoped state token    -> coordinates only the selected execution
@@ -591,6 +608,7 @@ For `sourceplane/orun`:
 - `orun run` without `--remote-state` is behavior-compatible with the current implementation.
 - `orun run <planID> --remote-state` resolves a saved plan by hash prefix and coordinates through orun-backend.
 - Outside GitHub Actions, `orun run <planID> --remote-state` uses GitHub OAuth/device login credentials from `orun auth login`.
+- Outside GitHub Actions, remote-state runs use a backend-derived user-scoped local namespace and never mutate the canonical repo namespace.
 - The CLI supports `orun auth login`, `orun auth login --device`, `orun auth status`, `orun auth logout`, `orun auth token`, and `orun cloud link`.
 - The CLI never stores raw GitHub access tokens or PATs as Orun credentials.
 - `orun run <planID> --env dev --remote-state` and `--env stage` can run independently while sharing the same backend run state.
@@ -608,7 +626,8 @@ For `sourceplane/orun-backend`:
 - `POST /v1/runs` supports deterministic `runId` and idempotent create/join.
 - Worker update forwarding includes `runnerId`.
 - Worker exposes enough run/job read APIs for `orun status --remote-state` and `orun logs --remote-state`.
-- Worker supports CLI session auth for local mutable remote-state routes while keeping dashboard sessions read-oriented.
+- Worker supports CLI session auth for local mutable remote-state routes by deriving `local:user:<githubUserId>:repo:<repoId>` from signed session identity and account-scoped repo cache, while keeping dashboard sessions read-oriented.
+- Worker rejects all session-token attempts to create, claim, update, heartbeat, or upload logs under canonical repo namespaces.
 - Worker supports CLI OAuth/device login, access-token refresh, logout/revocation, and hashed refresh-token storage.
 - Existing coordinator/storage tests still pass.
 

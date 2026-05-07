@@ -63,13 +63,15 @@ All endpoints are prefixed `/v1/`. The Worker returns JSON for all responses.
 | `POST` | `/v1/accounts` | Session | Create a orun account |
 | `GET` | `/v1/accounts/me` | Session | Get current account info |
 | `POST` | `/v1/accounts/repos` | Session + `X-GitHub-Access-Token` | Link a GitHub repo (admin-only, dashboard/admin flow) |
-| `POST` | `/v1/accounts/repos/link` | CLI Session | Resolve and link a repo by slug using CLI session namespace access (no GitHub token required) |
+| `POST` | `/v1/accounts/repos/link` | CLI Session | Resolve/create the caller's user-scoped local namespace for a repo (no GitHub token required) |
 | `GET` | `/v1/accounts/repos` | Session | List linked repos |
 | `DELETE` | `/v1/accounts/repos/:namespaceId` | Session | Unlink a repo |
 
 #### `POST /v1/accounts/repos/link`
 
-Allows a local Orun CLI session to link/resolve an allowed GitHub repo to a namespace ID without sending a GitHub OAuth access token. This endpoint closes the bootstrapping gap for `orun run --remote-state` on developer machines.
+Allows a local Orun CLI session to resolve the caller's local remote-state namespace for a GitHub repo without sending a GitHub OAuth access token. This endpoint closes the bootstrapping gap for `orun run --remote-state` on developer machines.
+
+This endpoint must **not** return or grant access to the canonical repo namespace. Local runs are owned by the authenticated human user and live in a separate namespace derived server-side from the immutable GitHub user ID and repo ID.
 
 **Request**:
 ```http
@@ -83,8 +85,11 @@ Content-Type: application/json
 **Response (200)**:
 ```json
 {
-  "namespaceId": "...",
-  "namespaceSlug": "owner/repo",
+  "namespaceKind": "local",
+  "namespaceId": "local:user:123456:repo:987654321",
+  "namespaceSlug": "local:octocat/owner/repo",
+  "repoId": "987654321",
+  "repoFullName": "owner/repo",
   "linkedAt": "..."
 }
 ```
@@ -92,12 +97,48 @@ Content-Type: application/json
 **Behavior**:
 - Requires `sessionKind="cli"`. Dashboard sessions are rejected with `FORBIDDEN`.
 - Validates `repoFullName` format (`owner/repo`).
-- Looks up `repoFullName` in the `namespaces` table (populated during CLI auth).
-- Requires the resolved namespace ID to be in `allowedNamespaceIds` from the session token.
-- Creates or reuses the `accounts` and `account_repos` rows. Idempotent.
-- If the slug is unknown (i.e., the user has an old session token from before this backend update), returns `NOT_FOUND` with guidance to re-run `orun auth login`.
+- Looks up `repoFullName` only in the caller's account-scoped repo cache populated during GitHub OAuth/device login. It must not authorize from the global `namespaces` table alone.
+- Computes the local namespace ID as `local:user:<githubUserId>:repo:<repoId>`. Both IDs are numeric GitHub IDs discovered by the backend; clients cannot supply or override them.
+- Creates or reuses the local `namespaces` row and the account-local repo link. Idempotent.
+- Returns `namespaceKind="local"` so the CLI never confuses this with a canonical repo namespace.
+- If the repo slug is unknown to the caller's cache, returns `NOT_FOUND` with guidance to re-run `orun auth login`. A future explicit repo-allow policy may add repo access checks, but the first secure version must prefer a clear relogin/error over slug-based authorization.
 
 The existing `POST /v1/accounts/repos` with `X-GitHub-Access-Token` is unchanged and still used by dashboard/admin flows.
+
+---
+
+## Namespace Kinds and Trust Boundaries
+
+The Worker has two production namespace kinds:
+
+| Kind | Namespace ID | Who can write | Purpose |
+|------|--------------|---------------|---------|
+| `repo` | GitHub `repository_id` from verified OIDC | GitHub Actions OIDC for that repo only | CI/workload remote-state and future repo-scoped SaaS dispatch |
+| `local` | `local:user:<githubUserId>:repo:<repoId>` | The matching CLI user session only | Developer-machine remote-state sandbox |
+
+```typescript
+interface Namespace {
+  kind: "repo" | "local";
+  namespaceId: string;
+  namespaceSlug: string;
+}
+```
+
+Canonical repo namespaces are workload identity. They are only valid when the Worker has verified a GitHub Actions OIDC token whose `repository_id` and `repository` claims match the target repo. A local OAuth/device session never writes into a canonical repo namespace, even when the human is an admin of that repo.
+
+Local namespaces are human identity. They let a developer exercise the same Durable Object, R2, D1, claim, dependency, heartbeat, status, and log paths from a laptop without mixing state with GitHub Actions. Local runs for two different users on the same repo intentionally do not collide:
+
+```text
+local:user:111:repo:987654321
+local:user:222:repo:987654321
+```
+
+Security requirements:
+
+- The backend must capture the immutable numeric GitHub user ID during OAuth/device login and include it in signed CLI session claims.
+- The backend must cache `(account_id, repo_id, repo_full_name)` from GitHub while the OAuth token is available. Local namespace resolution uses this account-scoped cache, not a globally guessable slug table.
+- Clients may send `repoFullName` to ask the backend to resolve a local namespace. If a client sends `namespaceId`, it is treated as advisory and must exactly equal the server-derived local namespace for that session and repo.
+- No authenticated user session can create, link, claim, update, upload logs, or otherwise mutate a canonical repo namespace. Future repo-delegated local execution requires an explicit policy table and is out of scope for this design.
 
 ---
 
@@ -109,8 +150,10 @@ Every request goes through `authenticate(request, env)` which returns a `Request
 interface RequestContext {
   type: "oidc" | "session";
   sessionKind?: "dashboard" | "cli";
-  namespace: Namespace;              // for OIDC — single namespace from token
-  allowedNamespaceIds: string[];     // for session — all accessible namespaces
+  namespace?: Namespace;             // for OIDC: canonical repo namespace from token
+  accountId?: string;                // for session
+  githubUserId?: string;             // for CLI session, immutable numeric GitHub user ID
+  githubLogin?: string;              // for display/audit only
   actor: string;
 }
 ```
@@ -125,8 +168,8 @@ interface RequestContext {
 ### Session Token Flow
 1. Extract `Authorization: Bearer <jwt>` header
 2. Verify signature against `ORUN_SESSION_SECRET` (Workers secret)
-3. Extract `allowedNamespaceIds` from session claims
-4. Extract optional `sessionKind`. Dashboard sessions are read-oriented. CLI sessions may use mutable coordination routes for local remote-state runs when namespace access is valid.
+3. Extract `accountId`, immutable `githubUserId`, display `githubLogin`, and optional `sessionKind` from session claims
+4. Dashboard sessions are read-oriented. CLI sessions may use mutable coordination routes only through local namespaces owned by that user.
 5. Return `RequestContext` with `type: "session"`
 
 ### Local Remote-State CLI Flow
@@ -141,17 +184,25 @@ This is allowed on mutable coordination routes so local developers can exercise 
 
 Dashboard sessions must remain read-oriented and must not be allowed to claim, update, heartbeat, or upload logs. If the Worker cannot distinguish dashboard from CLI sessions, it must reject session tokens on mutable coordination routes until the CLI session token shape is implemented.
 
+For local remote-state, the CLI sends the detected `repoFullName` when creating a run or first calls `POST /v1/accounts/repos/link`. The Worker derives the local namespace from the signed session's `githubUserId` and the backend-cached GitHub `repoId`. The CLI never receives authority to pick a canonical repo namespace.
+
 ### Namespace Enforcement
 Before **any** storage access:
 ```typescript
-function assertNamespaceAccess(ctx: RequestContext, targetNamespaceId: string): void {
+async function assertNamespaceAccess(ctx: RequestContext, targetNamespace: Namespace): Promise<void> {
   if (ctx.type === "oidc") {
-    if (ctx.namespace.namespaceId !== targetNamespaceId) throw forbidden();
-  } else {
-    if (!ctx.allowedNamespaceIds.includes(targetNamespaceId)) throw forbidden();
+    if (targetNamespace.kind !== "repo") throw forbidden();
+    if (ctx.namespace?.namespaceId !== targetNamespace.namespaceId) throw forbidden();
+    return;
   }
+
+  if (ctx.sessionKind !== "cli") throw forbidden();
+  if (targetNamespace.kind !== "local") throw forbidden();
+  if (!targetNamespace.namespaceId.startsWith(`local:user:${ctx.githubUserId}:repo:`)) throw forbidden();
 }
 ```
+
+Read-oriented dashboard APIs may additionally expose repo namespaces linked through `account_repos`, but that read policy must not be reused on mutable coordination routes.
 
 ---
 
@@ -168,7 +219,7 @@ async function rateLimit(namespaceId: string, env: Env): Promise<void> {
 }
 ```
 
-The implementation may use any approach (KV sliding window, DO counter, Cloudflare's built-in rate limiting API) — the key constraint is that limits are **per namespace_id** and configurable between free/premium tiers.
+The implementation may use any approach (KV sliding window, DO counter, Cloudflare's built-in rate limiting API) — the key constraint is that limits are keyed by the effective namespace ID. GitHub Actions traffic is limited by canonical repo namespace; local CLI traffic is limited by the user-scoped local namespace or by account ID for auth/link endpoints.
 
 ---
 
@@ -216,7 +267,9 @@ The Worker forwards relevant requests as sub-requests to the DO's `fetch` method
 **Request body**: `CreateRunRequest`
 
 **Actions**:
-1. Extract namespace from auth context
+1. Resolve the effective namespace:
+   - OIDC: derive the canonical repo namespace from verified token claims. If the request includes a namespace ID, it must match the OIDC-derived repo namespace exactly.
+   - CLI session: require `repoFullName` or a previously returned local namespace reference. Resolve `repoFullName` in the caller's account repo cache and derive `local:user:<githubUserId>:repo:<repoId>`. Reject any canonical repo namespace ID supplied by a session token.
 2. Use `body.runId` when supplied, otherwise generate `runId` = `nanoid()` or `crypto.randomUUID()`
 3. Call `coordinator.fetch(new Request("/init", { method: "POST", body: JSON.stringify({ plan, runId, namespaceId: namespace.namespaceId, namespaceSlug: namespace.namespaceSlug }) }))`
 4. Write run row to D1 via `D1Index.createRun(run)`
@@ -342,6 +395,10 @@ export default {
 - Test cases must cover:
   - Valid OIDC claim + successful job claim
   - Cross-namespace access → 403
+  - CLI session create derives a local namespace from `githubUserId` + `repoId`
+  - CLI session cannot create, claim, update, heartbeat, or upload logs under a canonical repo namespace
+  - Two CLI users targeting the same repo receive different local namespaces
+  - Repo slug guessing does not work when the repo is absent from the caller's account-scoped cache
   - Rate limit exceeded → 429
   - DO returns `claimed: false`
   - Log upload and retrieval
