@@ -60,7 +60,7 @@ function validateEnvelopeAgainstMessage(
     try {
       validateComponentPath(cs.component.path);
     } catch {
-      return `invalid component.path: ${cs.component.path}`;
+      return "invalid_component_path";
     }
   }
   return null;
