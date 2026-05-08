@@ -28,6 +28,29 @@
       "migrations_dir": "../../migrations"
     }
   ],
+  "queues": {
+    // Producer binding: allows the Worker to enqueue CatalogIngestMessage pointers.
+    "producers": [
+      {
+        "binding": "CATALOG_INGEST_QUEUE",
+        "queue": "orun-catalog-ingest"
+      }
+    ],
+    // Consumer: the Worker's queue() export processes CatalogIngestMessage batches.
+    // max_batch_size=10 keeps per-message D1 write pressure manageable.
+    // max_batch_timeout=30 limits latency for small batches.
+    // max_retries=3 gives three attempts before a message goes to the DLQ.
+    // dead_letter_queue preserves unprocessable messages for manual inspection.
+    "consumers": [
+      {
+        "queue": "orun-catalog-ingest",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "orun-catalog-ingest-dlq"
+      }
+    ]
+  },
   "vars": {
     "GITHUB_JWKS_URL": "https://token.actions.githubusercontent.com/.well-known/jwks",
     "GITHUB_OIDC_AUDIENCE": "orun"

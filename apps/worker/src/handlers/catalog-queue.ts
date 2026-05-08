@@ -35,6 +35,9 @@ function validateEnvelopeAgainstMessage(
   if (envelope.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
     return `unsupported schemaVersion: ${envelope.schemaVersion}`;
   }
+  if (envelope.uploadId !== message.uploadId) {
+    return "upload_id_mismatch";
+  }
   if (envelope.source?.repoId !== message.repoId) {
     return "envelope source.repoId does not match message repoId";
   }
@@ -86,6 +89,13 @@ export async function handleCatalogIngestQueue(
         repoId: (body as Record<string, unknown>)?.["repoId"] as string | undefined,
         reason: "malformed message shape",
       });
+      message.ack();
+      continue;
+    }
+
+    // Invariant: namespaceId and repoId must agree — the producer always sets them equal.
+    if (body.namespaceId !== body.repoId) {
+      logDrop({ uploadId: body.uploadId, namespaceId: body.namespaceId, repoId: body.repoId, reason: "namespace_repo_mismatch" });
       message.ack();
       continue;
     }
