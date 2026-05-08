@@ -1,4 +1,4 @@
-import type { Env, CatalogSyncEnvelope, CatalogComponentStatus } from "@orun/types";
+import type { Env, CatalogSyncEnvelope, CatalogComponentStatus, CatalogIngestMessage } from "@orun/types";
 import type { RequestContext } from "../auth";
 import { OrunError } from "../auth/errors";
 import { json } from "../http";
@@ -11,6 +11,8 @@ import type {
   CatalogEventInput,
   CatalogComponentFilter,
 } from "@orun/storage";
+import type { StorageRouter } from "@orun/storage";
+import { makeStorageRouter } from "../storage";
 import { getAccountByLogin } from "./accounts";
 
 const SUPPORTED_SCHEMA_VERSION = "1";
@@ -62,12 +64,12 @@ function deriveLatestStatus(
 // Local namespaces (kind=local or prefix "local:") are excluded from catalog reads.
 async function resolveVisibleCatalogNamespaceIds(
   authCtx: RequestContext & { type: "session" },
-  db: D1Database,
+  coreDb: D1Database,
 ): Promise<string[]> {
-  const account = await getAccountByLogin(db, authCtx.actor);
+  const account = await getAccountByLogin(coreDb, authCtx.actor);
   if (!account) return [];
 
-  const result = await db
+  const result = await coreDb
     .prepare(
       `SELECT n.namespace_id FROM account_repos ar JOIN namespaces n ON n.namespace_id = ar.namespace_id WHERE ar.account_id = ?1 AND (n.namespace_kind IS NULL OR n.namespace_kind = 'repo')`
     )
@@ -75,6 +77,113 @@ async function resolveVisibleCatalogNamespaceIds(
     .all<{ namespace_id: string }>();
 
   return (result.results ?? []).map((r) => r.namespace_id);
+}
+
+// Shared component normalization — used by both the ctx.waitUntil fallback and future queue consumer.
+async function normalizeComponents(
+  catalogIndex: D1Index,
+  r2: R2Storage,
+  envelope: CatalogSyncEnvelope,
+  namespaceId: string,
+  now: string,
+): Promise<void> {
+  for (const cs of (envelope.components ?? [])) {
+    const stateRef = await r2.writeCatalogComponentState(
+      namespaceId,
+      envelope.source.commit,
+      cs.component.name,
+      cs
+    );
+
+    const existingRow = await catalogIndex.getCatalogComponentRow(cs.component.id);
+    const latestStatus = deriveLatestStatus(cs.environments);
+
+    const upsert: CatalogComponentUpsert = {
+      componentId: cs.component.id,
+      namespaceId,
+      repoId: envelope.source.repoId,
+      repoFullName: envelope.source.repo,
+      name: cs.component.name,
+      title: cs.component.title,
+      description: cs.component.description,
+      type: cs.component.type,
+      owner: cs.component.owner,
+      system: cs.component.system,
+      lifecycle: cs.component.lifecycle,
+      repoPath: cs.component.path,
+      tags: cs.component.tags ?? [],
+      environments: cs.environments ?? [],
+      latestPlanId: cs.plan?.planId,
+      latestPlanChecksum: cs.plan?.checksum,
+      latestCommitSha: envelope.source.commit,
+      latestStatus,
+      currentStateRef: stateRef,
+      firstSeenAt: existingRow ? (existingRow.first_seen_at as string) : now,
+      lastSeenAt: now,
+    };
+
+    await catalogIndex.upsertCatalogComponent(upsert);
+
+    const relations: CatalogRelationInput[] = [];
+    for (const rel of (cs.relations ?? [])) {
+      const relationId = await deriveRelationId([
+        cs.component.id,
+        rel.relationType,
+        rel.targetKind,
+        rel.targetRef,
+        rel.environment ?? null,
+        rel.jobId ?? null,
+      ]);
+      relations.push({
+        relationId,
+        sourceComponentId: cs.component.id,
+        relationType: rel.relationType,
+        targetKind: rel.targetKind,
+        targetRef: rel.targetRef,
+        environment: rel.environment,
+        jobId: rel.jobId,
+        lastSeenAt: now,
+      });
+    }
+    await catalogIndex.replaceCatalogRelations(cs.component.id, relations);
+
+    let eventType: CatalogEventInput["eventType"] = "synced";
+    if (!existingRow) {
+      eventType = "created";
+    } else if (
+      existingRow.latest_commit_sha !== envelope.source.commit ||
+      existingRow.owner !== (cs.component.owner ?? null) ||
+      existingRow.type !== cs.component.type ||
+      existingRow.system !== (cs.component.system ?? null) ||
+      existingRow.lifecycle !== (cs.component.lifecycle ?? null)
+    ) {
+      eventType = "updated";
+    }
+
+    if (cs.source?.prNumber !== undefined) {
+      eventType = "pr_changed";
+    }
+
+    const eventId = await deriveRelationId([
+      cs.component.id,
+      envelope.uploadId,
+      eventType,
+      envelope.source.commit,
+    ]);
+
+    const eventInput: CatalogEventInput = {
+      eventId,
+      componentId: cs.component.id,
+      namespaceId,
+      uploadId: envelope.uploadId,
+      eventType,
+      commitSha: envelope.source.commit,
+      prNumber: cs.source?.prNumber ?? envelope.source.prNumber,
+      createdAt: now,
+    };
+
+    await catalogIndex.appendCatalogComponentEvent(eventInput);
+  }
 }
 
 export async function handleCatalogSync(rc: RouteContext): Promise<Response> {
@@ -161,13 +270,15 @@ export async function handleCatalogSync(rc: RouteContext): Promise<Response> {
   }
 
   const namespaceId = oidcRepoId;
-  const db = new D1Index(rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const catalogIndex = new D1Index(router.catalogForNamespace(namespaceId));
+  const coreIndex = new D1Index(router.core());
   const r2 = new R2Storage(rc.env.STORAGE);
 
-  // Idempotency: check if this uploadId already exists
-  const alreadyExists = await db.uploadExists(envelope.uploadId);
+  // Idempotency: check if this uploadId already exists on the catalog shard
+  const alreadyExists = await catalogIndex.uploadExists(envelope.uploadId);
   if (alreadyExists) {
-    const existing = await db.recordCatalogUpload({
+    const existing = await catalogIndex.recordCatalogUpload({
       uploadId: envelope.uploadId,
       namespaceId,
       repoId: envelope.source.repoId,
@@ -180,148 +291,59 @@ export async function handleCatalogSync(rc: RouteContext): Promise<Response> {
     return json(existing, 202);
   }
 
-  const normalizePromise = async () => {
-    // Upsert canonical repo namespace
-    await db.upsertNamespace({
-      namespaceId,
-      namespaceSlug: envelope.source.repo,
-      kind: "repo",
-    });
+  // Sync path: upsert canonical repo namespace in core DB
+  await coreIndex.upsertNamespace({
+    namespaceId,
+    namespaceSlug: envelope.source.repo,
+    kind: "repo",
+  });
 
-    // Write raw envelope to R2
-    const envelopeRef = await r2.writeCatalogEnvelope(namespaceId, envelope.uploadId, envelope);
+  // Sync path: write raw envelope to R2
+  const envelopeRef = await r2.writeCatalogEnvelope(namespaceId, envelope.uploadId, envelope);
 
-    const now = new Date().toISOString();
-    const componentCount = envelope.components?.length ?? 0;
+  const now = new Date().toISOString();
+  const componentCount = envelope.components?.length ?? 0;
 
-    // Record the upload
-    const uploadInput: CatalogUploadInput = {
-      uploadId: envelope.uploadId,
-      namespaceId,
-      repoId: envelope.source.repoId,
-      repoFullName: envelope.source.repo,
-      commitSha: envelope.source.commit,
-      branch: envelope.source.branch,
-      workflowRunId: envelope.source.workflowRunId,
-      workflowRef: envelope.source.workflowRef,
-      prNumber: envelope.source.prNumber,
-      envelopeRef,
-      componentCount,
-      createdAt: now,
-    };
-    await db.recordCatalogUpload(uploadInput);
+  // Sync path: record idempotency row in catalog shard
+  const uploadInput: CatalogUploadInput = {
+    uploadId: envelope.uploadId,
+    namespaceId,
+    repoId: envelope.source.repoId,
+    repoFullName: envelope.source.repo,
+    commitSha: envelope.source.commit,
+    branch: envelope.source.branch,
+    workflowRunId: envelope.source.workflowRunId,
+    workflowRef: envelope.source.workflowRef,
+    prNumber: envelope.source.prNumber,
+    envelopeRef,
+    componentCount,
+    createdAt: now,
+  };
+  await catalogIndex.recordCatalogUpload(uploadInput);
 
-    // Normalize each component
-    for (const cs of (envelope.components ?? [])) {
-      const stateRef = await r2.writeCatalogComponentState(
-        namespaceId,
-        envelope.source.commit,
-        cs.component.name,
-        cs
-      );
-
-      // Fetch existing component to detect changes
-      const existingRow = await db.getCatalogComponentRow(cs.component.id);
-
-      const latestStatus = deriveLatestStatus(cs.environments);
-
-      const upsert: CatalogComponentUpsert = {
-        componentId: cs.component.id,
-        namespaceId,
-        repoId: envelope.source.repoId,
-        repoFullName: envelope.source.repo,
-        name: cs.component.name,
-        title: cs.component.title,
-        description: cs.component.description,
-        type: cs.component.type,
-        owner: cs.component.owner,
-        system: cs.component.system,
-        lifecycle: cs.component.lifecycle,
-        repoPath: cs.component.path,
-        tags: cs.component.tags ?? [],
-        environments: cs.environments ?? [],
-        latestPlanId: cs.plan?.planId,
-        latestPlanChecksum: cs.plan?.checksum,
-        latestCommitSha: envelope.source.commit,
-        latestStatus,
-        currentStateRef: stateRef,
-        firstSeenAt: existingRow ? (existingRow.first_seen_at as string) : now,
-        lastSeenAt: now,
-      };
-
-      await db.upsertCatalogComponent(upsert);
-
-      // Replace relations for this component
-      const relations: CatalogRelationInput[] = [];
-      for (const rel of (cs.relations ?? [])) {
-        const relationId = await deriveRelationId([
-          cs.component.id,
-          rel.relationType,
-          rel.targetKind,
-          rel.targetRef,
-          rel.environment ?? null,
-          rel.jobId ?? null,
-        ]);
-        relations.push({
-          relationId,
-          sourceComponentId: cs.component.id,
-          relationType: rel.relationType,
-          targetKind: rel.targetKind,
-          targetRef: rel.targetRef,
-          environment: rel.environment,
-          jobId: rel.jobId,
-          lastSeenAt: now,
-        });
-      }
-      await db.replaceCatalogRelations(cs.component.id, relations);
-
-      // Determine event type
-      let eventType: CatalogEventInput["eventType"] = "synced";
-      if (!existingRow) {
-        eventType = "created";
-      } else if (
-        existingRow.latest_commit_sha !== envelope.source.commit ||
-        existingRow.owner !== (cs.component.owner ?? null) ||
-        existingRow.type !== cs.component.type ||
-        existingRow.system !== (cs.component.system ?? null) ||
-        existingRow.lifecycle !== (cs.component.lifecycle ?? null)
-      ) {
-        eventType = "updated";
-      }
-
-      if (cs.source?.prNumber !== undefined) {
-        eventType = "pr_changed";
-      }
-
-      const eventId = await deriveRelationId([
-        cs.component.id,
-        envelope.uploadId,
-        eventType,
-        envelope.source.commit,
-      ]);
-
-      const eventInput: CatalogEventInput = {
-        eventId,
-        componentId: cs.component.id,
-        namespaceId,
-        uploadId: envelope.uploadId,
-        eventType,
-        commitSha: envelope.source.commit,
-        prNumber: cs.source?.prNumber ?? envelope.source.prNumber,
-        createdAt: now,
-      };
-
-      await db.appendCatalogComponentEvent(eventInput);
-    }
+  const ingestMessage: CatalogIngestMessage = {
+    namespaceId,
+    repoId: envelope.source.repoId,
+    repoFullName: envelope.source.repo,
+    uploadId: envelope.uploadId,
+    envelopeRef,
+    commitSha: envelope.source.commit,
+    receivedAt: now,
   };
 
-  rc.ctx.waitUntil(normalizePromise());
+  if (router.hasCatalogQueue()) {
+    // Queue path: enqueue pointer message for async normalization
+    await router.enqueueCatalogIngest(ingestMessage);
+  } else {
+    // Fallback path: normalize with ctx.waitUntil (local/bootstrap)
+    rc.ctx.waitUntil(normalizeComponents(catalogIndex, r2, envelope, namespaceId, now));
+  }
 
   return json(
     {
       uploadId: envelope.uploadId,
-      acceptedAt: new Date().toISOString(),
-      componentCount: envelope.components?.length ?? 0,
+      acceptedAt: now,
+      componentCount,
     },
     202
   );
@@ -332,7 +354,8 @@ export async function handleListCatalogComponents(rc: RouteContext): Promise<Res
     throw new OrunError("FORBIDDEN", "Session authentication required");
   }
 
-  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, router.core());
   const url = new URL(rc.request.url);
   const sp = url.searchParams;
 
@@ -349,8 +372,7 @@ export async function handleListCatalogComponents(rc: RouteContext): Promise<Res
     offset: sp.has("offset") ? Math.max(parseInt(sp.get("offset")!, 10) || 0, 0) : 0,
   };
 
-  const db = new D1Index(rc.env.DB);
-  const result = await db.listCatalogComponents(filter);
+  const result = await listCatalogComponentsFromRouter(router, filter);
   return json(result);
 }
 
@@ -360,10 +382,10 @@ export async function handleGetCatalogComponent(rc: RouteContext): Promise<Respo
   }
 
   const { componentId } = rc.params;
-  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, router.core());
 
-  const db = new D1Index(rc.env.DB);
-  const component = await db.getCatalogComponent(visibleNamespaceIds, componentId);
+  const component = await getCatalogComponentFromRouter(router, visibleNamespaceIds, componentId);
   if (!component) {
     throw new OrunError("NOT_FOUND", "Component not found");
   }
@@ -376,11 +398,18 @@ export async function handleGetCatalogComponentHistory(rc: RouteContext): Promis
   }
 
   const { componentId } = rc.params;
-  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, router.core());
 
-  const db = new D1Index(rc.env.DB);
-  const events = await db.listCatalogComponentEvents(visibleNamespaceIds, componentId);
-  return json({ events });
+  const shardMap = router.catalogForNamespaces(visibleNamespaceIds);
+  const allEvents = [];
+  for (const [db, nsIds] of shardMap) {
+    const idx = new D1Index(db);
+    const events = await idx.listCatalogComponentEvents(nsIds, componentId);
+    allEvents.push(...events);
+  }
+  allEvents.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return json({ events: allEvents });
 }
 
 export async function handleGetCatalogComponentRuns(rc: RouteContext): Promise<Response> {
@@ -389,17 +418,23 @@ export async function handleGetCatalogComponentRuns(rc: RouteContext): Promise<R
   }
 
   const { componentId } = rc.params;
-  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, router.core());
 
-  // Resolve component name from ID to query runs by component name
-  const db = new D1Index(rc.env.DB);
-  const component = await db.getCatalogComponent(visibleNamespaceIds, componentId);
+  const component = await getCatalogComponentFromRouter(router, visibleNamespaceIds, componentId);
   if (!component) {
     throw new OrunError("NOT_FOUND", "Component not found");
   }
 
-  const runs = await db.listCatalogComponentRecentRuns(visibleNamespaceIds, component.name);
-  return json({ runs });
+  const shardMap = router.catalogForNamespaces(visibleNamespaceIds);
+  const allRuns = [];
+  for (const [db, nsIds] of shardMap) {
+    const idx = new D1Index(db);
+    const runs = await idx.listCatalogComponentRecentRuns(nsIds, component.name);
+    allRuns.push(...runs);
+  }
+  allRuns.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return json({ runs: allRuns.slice(0, 10) });
 }
 
 export async function handleGetCatalogComponentDependencies(rc: RouteContext): Promise<Response> {
@@ -408,11 +443,19 @@ export async function handleGetCatalogComponentDependencies(rc: RouteContext): P
   }
 
   const { componentId } = rc.params;
-  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, router.core());
 
-  const db = new D1Index(rc.env.DB);
-  const relations = await db.listCatalogComponentRelations(visibleNamespaceIds, componentId);
-  return json(relations);
+  const shardMap = router.catalogForNamespaces(visibleNamespaceIds);
+  const outgoing = [];
+  const incoming = [];
+  for (const [db, nsIds] of shardMap) {
+    const idx = new D1Index(db);
+    const relations = await idx.listCatalogComponentRelations(nsIds, componentId);
+    outgoing.push(...relations.outgoing);
+    incoming.push(...relations.incoming);
+  }
+  return json({ outgoing, incoming });
 }
 
 export async function handleListRepoComponents(rc: RouteContext): Promise<Response> {
@@ -421,7 +464,8 @@ export async function handleListRepoComponents(rc: RouteContext): Promise<Respon
   }
 
   const { repoId } = rc.params;
-  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, rc.env.DB);
+  const router = makeStorageRouter(rc.env);
+  const visibleNamespaceIds = await resolveVisibleCatalogNamespaceIds(rc.authCtx, router.core());
   const url = new URL(rc.request.url);
   const sp = url.searchParams;
 
@@ -438,7 +482,52 @@ export async function handleListRepoComponents(rc: RouteContext): Promise<Respon
     offset: sp.has("offset") ? Math.max(parseInt(sp.get("offset")!, 10) || 0, 0) : 0,
   };
 
-  const db = new D1Index(rc.env.DB);
-  const result = await db.listCatalogComponents(filter);
+  const result = await listCatalogComponentsFromRouter(router, filter);
   return json(result);
+}
+
+// ─── Router-aware query helpers ───────────────────────────────────────────────
+
+// Query each touched catalog shard for the component list, then merge.
+// With single-DB fallback (all shards == coreDb), this is a direct passthrough.
+async function listCatalogComponentsFromRouter(
+  router: StorageRouter,
+  filter: CatalogComponentFilter,
+) {
+  if (filter.visibleNamespaceIds.length === 0) return { components: [], total: 0 };
+  const shardMap = router.catalogForNamespaces(filter.visibleNamespaceIds);
+
+  if (shardMap.size === 1) {
+    const [[db, nsIds]] = shardMap;
+    return new D1Index(db).listCatalogComponents({ ...filter, visibleNamespaceIds: nsIds });
+  }
+
+  // Multi-shard: query each, merge, then re-paginate. Pagination is approximate
+  // across shards; exact cross-shard pagination is deferred to a future task.
+  const limit = filter.limit ?? 50;
+  const offset = filter.offset ?? 0;
+  let total = 0;
+  const all = [];
+  for (const [db, nsIds] of shardMap) {
+    const res = await new D1Index(db).listCatalogComponents({ ...filter, visibleNamespaceIds: nsIds, offset: 0 });
+    all.push(...res.components);
+    total += res.total;
+  }
+  all.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+  return { components: all.slice(offset, offset + limit), total };
+}
+
+// Query each touched shard for a component by ID, return first match.
+async function getCatalogComponentFromRouter(
+  router: StorageRouter,
+  visibleNamespaceIds: string[],
+  componentId: string,
+) {
+  if (visibleNamespaceIds.length === 0) return null;
+  const shardMap = router.catalogForNamespaces(visibleNamespaceIds);
+  for (const [db, nsIds] of shardMap) {
+    const result = await new D1Index(db).getCatalogComponent(nsIds, componentId);
+    if (result) return result;
+  }
+  return null;
 }

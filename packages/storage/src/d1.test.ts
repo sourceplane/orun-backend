@@ -314,6 +314,7 @@ describe("D1Index", () => {
       const migration2 = readFileSync(join(__dirname, "../../../migrations/0002_namespaces_account.sql"), "utf-8");
       const migration3 = readFileSync(join(__dirname, "../../../migrations/0003_cli_sessions.sql"), "utf-8");
       const migration5 = readFileSync(join(__dirname, "../../../migrations/0005_catalog_index.sql"), "utf-8");
+      const migration6 = readFileSync(join(__dirname, "../../../migrations/0006_tenant_routes.sql"), "utf-8");
       expect(migration1).toContain("CREATE TABLE namespaces");
       expect(migration1).toContain("CREATE TABLE runs");
       expect(migration1).toContain("CREATE TABLE jobs");
@@ -327,6 +328,10 @@ describe("D1Index", () => {
       expect(migration5).toContain("CREATE TABLE catalog_component_events");
       expect(migration5).toContain("CREATE INDEX idx_catalog_components_namespace");
       expect(migration5).toContain("relation_id");
+      expect(migration6).toContain("CREATE TABLE tenant_routes");
+      expect(migration6).toContain("route_key");
+      expect(migration6).toContain("backend_type");
+      expect(migration6).toContain("shard_index");
     });
   });
 
