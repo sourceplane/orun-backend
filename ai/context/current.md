@@ -17,14 +17,13 @@ Build a Cloudflare-first Orun control plane monorepo:
 
 ## Current State
 
-- Current task pointer: task 0021 (first V2 implementation)
+- Current task pointer: task 0022
 - Last verified: 2026-05-08
 - Repo health: yellow
 - Live Worker: `https://orun-api.sourceplane.ai`
 - Live Dashboard: `https://orun-dashboard.sourceplane.ai`
 - Stack version: `oci://ghcr.io/sourceplane/stack-tectonic:0.12.0`
-- Next focus: Task 0021 — create `packages/db` and the first V2
-  Supabase/Postgres migration harness per `spec/v2/07-provisioning-and-operations.md`.
+- Next focus: Task 0022 — Tactonic/Supabase provisioning component and CI plan workflow.
 
 Repo health is yellow because Task 0019 could not complete a fresh live local
 remote-state conformance run: the available CLI session predates
@@ -52,11 +51,20 @@ squash commit `d8dd132`. The embedded backend bundle includes migration 0006,
 consumer/cron, binding-clobber risk from Task 0015 is resolved. Verifier
 report: `ai/reports/task-0020-verifier.md`. Local orun main fast-forwarded.
 
-Task 0021 prompt is `ai/tasks/task-0021.md`. It asks an implementer to create
-`packages/db` as `@orun/db`, add a Postgres migration harness, and check in the
-first bounded V2 core schema migration for users, organizations, membership,
-billing placeholders, entitlements, and projects. It must not provision
-Supabase, add Hyperdrive, change Worker routes, or alter V1 behavior.
+Task 0021 verified PASS on 2026-05-08. PR #39 merged as squash commit `238404e`.
+`packages/db` exists as workspace package `@orun/db` with migration harness
+(`applyMigrations`, `getMigrationStatus`, `loadMigrations`, `checksumSql`),
+`NodePgClient`, CLI scripts, typed domain row types for all 8 core tables,
+ID/slug helpers, and `0001_core.sql`. 57 tests pass (no live DB required). All
+local and orun CI checks pass (21/21 jobs). Verifier report:
+`ai/reports/task-0021-verifier.md`. Live database smoke was not run — Docker/local
+Postgres unavailable; deferred to Task 0022 Tactonic provisioning.
+
+Next task is Task 0022: Tactonic/Supabase provisioning component and CI plan
+workflow. It must provision the Supabase project and database, wire
+`DATABASE_URL` into CI secrets, and run `pnpm --filter @orun/db migrate` against
+the live database to confirm `orun_schema_migrations` and all 8 core tables
+exist.
 
 The latest architecture update from `scalable-db-conversations.txt` keeps Orun
 Cloudflare-first but rejects the long-term "one giant D1" shape. The durable
