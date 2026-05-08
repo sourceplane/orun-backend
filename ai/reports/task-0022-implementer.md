@@ -217,4 +217,4 @@ or activating `infra/` as an Orun discovery root with the generic composition
 
 ## PR Number
 
-See PR opened from this task.
+PR #40 — https://github.com/sourceplane/orun-backend/pull/40
