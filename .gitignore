@@ -10,3 +10,4 @@ dist/
 
 # orun per-job staged workspaces
 .orun/runs/
+.secrets

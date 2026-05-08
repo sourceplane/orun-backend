@@ -123,6 +123,21 @@ spec:
     runtime: cloudflare
 ```
 
+The single `migrationCommand` above reflects the current one-D1 implementation.
+When scalable storage routing is introduced, the Worker delivery contract must
+make migrations explicit per logical database role:
+
+- core/control-plane migrations apply to the core D1 database
+- catalog shard migrations apply to every configured catalog shard
+- tenant-dedicated D1 migrations apply only to tenant routes that use a
+  dedicated D1 backend
+- Postgres/Hyperdrive backends are never migrated with Wrangler D1 commands
+
+Do not hide multiple production D1 migrations behind an implicit shell loop that
+CI cannot report clearly. The task that introduces shard bindings must update
+the component inputs, docs, and verification checklist so each database family is
+visible in CI logs.
+
 **`packages/types/component.yaml`** — shared types package (representative; other packages follow the same pattern):
 
 ```yaml
@@ -256,6 +271,19 @@ For local development, `wrangler dev` (from `apps/worker/`) runs the Worker loca
 ## Wrangler Configuration
 
 `wrangler.jsonc` lives inside `apps/worker/` — not at the repo root. The `cloudflare-worker-turbo` composition verifies structure relative to the component directory. Refer to `spec/01-monorepo-structure.md` for the full `wrangler.jsonc` template with all required bindings.
+
+Future scalable-storage bindings are still declared in `apps/worker/wrangler.jsonc`.
+The expected direction is:
+
+- one core D1 binding for accounts, repo cache, entitlements, and routing
+- a bounded set of catalog shard D1 bindings for queryable catalog/run indexes
+- one or more Queue bindings for async ingestion pointer messages
+- R2 bucket bindings for raw artifacts, logs, sync envelopes, and snapshots
+- optional Hyperdrive bindings only after a tenant or analytics backend actually
+  requires Postgres
+
+Local development must continue to work under Miniflare with a small shard count
+and fake/no-op queues where Cloudflare Queues are unavailable locally.
 
 ---
 

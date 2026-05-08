@@ -6,12 +6,13 @@ The Worker is the HTTP API gateway for the orun-backend. It handles:
 1. Request authentication (OIDC JWT or session JWT)
 2. Namespace extraction and validation
 3. Rate limiting
-4. Routing to Durable Objects, R2, and D1
+4. Routing to Durable Objects, R2, D1, and async ingestion queues
 5. Response formatting
 
 **Agent task**: Implement `packages/worker/src/index.ts` and supporting modules.
 
-The Worker contains **no business logic** — it delegates to the Coordinator DO, R2Storage, and D1Index utilities.
+The Worker contains **no business logic** — it delegates to the Coordinator DO,
+R2Storage, D1Index, and storage-router utilities.
 
 ---
 
@@ -80,6 +81,24 @@ The catalog API supports the dashboard product model in `spec/11-dashboard-ui.md
 | `GET` | `/v1/catalog/components/:componentId/runs` | Session | Get recent runs touching the component |
 | `GET` | `/v1/catalog/components/:componentId/dependencies` | Session | Get incoming and outgoing component relations |
 | `GET` | `/v1/repos/:repoId/components` | Session | List visible components for one repo |
+
+### Storage Routing Boundary
+
+Handlers must not assume that every D1 table lives behind `env.DB`. The current
+implementation still does, but scalable Cloudflare design requires a routing
+layer:
+
+- core/account/session/repo-cache lookups use the core D1 database
+- catalog and run query indexes use a shard chosen from repo/tenant routing
+  metadata
+- large artifacts, raw sync envelopes, component states, and logs use R2
+- async catalog normalization uses Queue pointer messages once the queue binding
+  exists
+
+The Worker remains a thin API gateway. It may authenticate, validate, resolve a
+storage route, enqueue work, and call storage/coordinator helpers. It must not
+inline shard selection rules across handlers or query unrelated tenant shards by
+hand.
 
 #### `POST /v1/accounts/repos/link`
 
@@ -286,7 +305,7 @@ The Worker forwards relevant requests as sub-requests to the DO's `fetch` method
    - CLI session: require `repoFullName` or a previously returned local namespace reference. Resolve `repoFullName` in the caller's account repo cache and derive `local:user:<githubUserId>:repo:<repoId>`. Reject any canonical repo namespace ID supplied by a session token.
 2. Use `body.runId` when supplied, otherwise generate `runId` = `nanoid()` or `crypto.randomUUID()`
 3. Call `coordinator.fetch(new Request("/init", { method: "POST", body: JSON.stringify({ plan, runId, namespaceId: namespace.namespaceId, namespaceSlug: namespace.namespaceSlug }) }))`
-4. Write run row to D1 via `D1Index.createRun(run)`
+4. Write run row to the routed run/catalog index via `D1Index.createRun(run)`
 5. Optionally store plan in R2 via `R2Storage.savePlan(namespace.namespaceId, plan)`
 
 **Response**: `201 CreateRunResponse`
@@ -317,7 +336,7 @@ If `claimed: false`, return `200` not `409` — the runner should interpret the 
 1. Verify OIDC auth or CLI session auth (dashboard sessions may not update)
 2. Enforce namespace access
 3. Forward to coordinator as `CoordinatorUpdateJobRequest`
-4. After a successful coordinator response, mirror the job/run summary into D1 with `ctx.waitUntil(...)`
+4. After a successful coordinator response, mirror the job/run summary into the routed run/catalog index with `ctx.waitUntil(...)`
 
 The Worker must not drop `runnerId`; the coordinator uses it to reject updates from a runner that no longer owns the job.
 
@@ -356,8 +375,9 @@ The Worker must not drop `runnerId`; the coordinator uses it to reject updates f
 3. Validate supported `schemaVersion`, bounded body size, non-empty `uploadId`, non-empty commit SHA, and component paths that are relative paths inside the repo.
 4. Upsert the canonical repo namespace as `kind: "repo"`.
 5. Store the raw envelope in R2 using the catalog path helpers from `spec/12-catalog-index.md`.
-6. Normalize component, relation, upload, and event rows into D1. The first implementation may do this synchronously or with `ctx.waitUntil`; do not add a Queue binding until a queue task exists.
-7. Treat duplicate `uploadId` as idempotent success.
+6. Write upload metadata to the routed catalog index and normalize component, relation, and event rows there.
+7. When `CATALOG_INGEST_QUEUE` exists, enqueue a small pointer message after R2 persistence instead of doing all normalization inline. The queue message carries namespace/repo/upload IDs and the R2 envelope reference, never the full envelope.
+8. Treat duplicate `uploadId` as idempotent success.
 
 **Response**: `202 { uploadId: string; acceptedAt: string; componentCount: number }`
 
@@ -417,9 +437,9 @@ const CORS_HEADERS = {
 ## Scheduled Worker
 
 A `scheduled` handler runs every 15 minutes to:
-1. Find runs in D1 where `status = 'running'` and `expires_at < NOW()`
+1. Find runs in the routed run/catalog index where `status = 'running'` and `expires_at < NOW()`
 2. Call coordinator to mark them as `cancelled`
-3. Remove expired D1 rows
+3. Remove expired index rows and R2 run objects
 
 ```typescript
 export default {

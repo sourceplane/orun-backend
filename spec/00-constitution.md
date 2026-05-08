@@ -44,6 +44,19 @@ D1 rows are written *after* DO state transitions, not instead of them. D1 is use
 - **Incorrect**: Checking D1 to decide whether a job can be claimed.
 - **Why**: D1 may lag behind real-time DO state. Authoritative decisions must use the DO.
 
+D1 must also be treated as a horizontally scalable family of small databases,
+not as a single global Postgres replacement. The Cloudflare-first control plane
+uses:
+
+- a small core D1 database for users, accounts, repos, entitlements, and routing
+- catalog/run D1 shards for queryable derived indexes
+- optional dedicated D1 or Postgres backends for large tenants
+- R2 for raw artifacts, logs, snapshots, and large JSON payloads
+
+The current single `DB` binding is an early implementation shape. New work must
+introduce storage routing seams before adding high-volume ingestion or
+cross-tenant query features.
+
 ### 5. Identity = `repository_id`, Not `org/repo`
 
 The canonical namespace for all storage is GitHub's **numeric repository ID** (`repository_id`), not the human-readable slug. The slug is stored alongside for display only and updated lazily.
@@ -111,6 +124,20 @@ Every deployable unit and shared package must be wired to the [tectonic stack](h
 
 See `spec/01-monorepo-structure.md` for canonical examples of each file.
 
+### 12. Ingestion is Event-Indexed and Asynchronous at Scale
+
+Hot request paths must acknowledge uploads quickly after authentication, size
+validation, raw R2 persistence, and a small durable index/queue write. Expensive
+normalization, scorecard calculation, graph recomputation, and analytics
+compaction run asynchronously.
+
+- **Correct**: Store a catalog sync envelope in R2, write an upload row, enqueue a
+  pointer message, and let a consumer update catalog shards.
+- **Incorrect**: Keep a GitHub Action waiting while the Worker parses and writes
+  every historical component snapshot forever.
+- **Why**: Workers, D1, Queues, and R2 scale well when each layer does the work it
+  is built for. Inline ingestion couples user latency to shard write pressure.
+
 ---
 
 ## Technology Decisions
@@ -120,8 +147,11 @@ See `spec/01-monorepo-structure.md` for canonical examples of each file.
 | API layer | Cloudflare Workers (TypeScript) | Stateless, edge-global, zero cold start |
 | Coordination | Cloudflare Durable Objects | Single-threaded per key = atomic job claiming |
 | Logs/Artifacts | Cloudflare R2 | S3-compatible, zero egress cost, edge-accessible |
-| Dashboard index | Cloudflare D1 (SQLite) | Native Workers integration, simple SQL |
+| Core metadata | Cloudflare D1 (SQLite) | Small tenant/user/repo/billing mirror and storage routing tables |
+| Dashboard indexes | Cloudflare D1 shards | Horizontally sharded derived catalog/run query indexes |
+| Async ingestion | Cloudflare Queues | Pointer messages for catalog/run/scorecard normalization work |
 | Runtime cache | Cloudflare KV (optional) | Permission caching, rate limit counters |
+| Future large-tenant backend | Hyperdrive + Postgres | Escape hatch for tenants or analytics that outgrow D1 shards |
 | Language | TypeScript | Workers native, strong types across packages |
 | Monorepo | pnpm + Turborepo | pnpm workspaces for dependency management; Turbo for build/typecheck orchestration with caching |
 | CI/CD delivery | Tectonic stack (`oci://ghcr.io/sourceplane/stack-tectonic`) | Versioned composition catalog; compositions handle all build/deploy logic via `component.yaml` declarations |

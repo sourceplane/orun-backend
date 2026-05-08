@@ -164,10 +164,17 @@ Backend flow:
 1. Verify GitHub Actions OIDC.
 2. Validate the envelope shape, size, schema version, repo ID, commit, component paths, and upload ID.
 3. Store the raw envelope in R2 under the canonical repo namespace.
-4. Normalize searchable records into D1.
-5. Return `202 { uploadId, acceptedAt, componentCount }`.
+4. Record upload/idempotency metadata in the routed catalog shard.
+5. For the scalable path, enqueue a Queue message containing the R2 envelope
+   reference and routing metadata.
+6. Normalize searchable records into the routed catalog shard, either through a
+   queue consumer or through the local/dev fallback.
+7. Return `202 { uploadId, acceptedAt, componentCount }`.
 
-The initial implementation may normalize synchronously or with `ctx.waitUntil`. Cloudflare Queues are a later scale step and must not be invented in config until a queue binding exists.
+The first implementation normalized with `ctx.waitUntil` against the single `DB`
+binding. The next scalable implementation should add the queue-backed path while
+keeping the same validation, R2 layout, idempotency behavior, and normalizer
+semantics.
 
 ---
 
@@ -241,6 +248,48 @@ Dashboard catalog reads use the same linked namespace policy as run reads. A ses
 
 D1 is the query index. R2 stores immutable raw artifacts. D1 must not store full catalog envelopes or large plan JSON blobs.
 
+Catalog D1 data is horizontally shardable. Dashboard and ingestion code must use
+a storage router rather than assuming every catalog table is in `env.DB`.
+
+Recommended first production topology:
+
+```text
+core D1
+  namespaces
+  accounts
+  account_repos
+  account_repo_cache
+  cli_sessions
+  tenant_routes
+
+catalog shard D1 databases
+  catalog_uploads
+  catalog_components
+  catalog_component_relations
+  catalog_component_events
+  runs
+  jobs
+
+R2
+  raw catalog envelopes
+  component states
+  plans
+  logs
+  snapshots
+
+Queues
+  catalog ingest pointer messages
+```
+
+The current one-D1 implementation is allowed only as a transitional bootstrap
+shape. The catalog contract is the logical model above, not the physical
+existence of one database named `orun-db`.
+
+Shard routing starts as `hash(namespaceId) % shardCount`. Large tenants can later
+move to a dedicated D1 database or to Postgres through Hyperdrive, selected by a
+core `tenant_routes` row. Catalog APIs should remain stable across those backend
+changes.
+
 ### R2 Layout
 
 All keys start with the effective namespace ID to preserve the existing storage isolation rule:
@@ -254,7 +303,8 @@ All keys start with the effective namespace ID to preserve the existing storage 
 
 ### D1 Tables
 
-Add a catalog migration after the current migrations:
+Add a catalog migration after the current migrations. In the scalable topology,
+apply this migration to every catalog shard:
 
 ```sql
 CREATE TABLE catalog_uploads (
@@ -341,6 +391,47 @@ CREATE INDEX idx_catalog_relations_target ON catalog_component_relations(target_
 
 ---
 
+## Async Ingestion Queue
+
+Queue-backed ingestion is required before Orun treats catalog sync as a
+production-scale high-volume path.
+
+Producer behavior for `POST /v1/catalog/sync`:
+
+1. Validate OIDC and envelope metadata.
+2. Persist the raw envelope to R2.
+3. Insert or observe the `catalog_uploads` idempotency row on the target shard.
+4. Send a `CatalogIngestMessage` to the queue.
+5. Return `202` without waiting for full normalization.
+
+Message shape:
+
+```json
+{
+  "namespaceId": "123456789",
+  "repoId": "123456789",
+  "repoFullName": "sourceplane/orun",
+  "uploadId": "upl_01hx",
+  "envelopeRef": "123456789/catalog/uploads/upl_01hx/catalog-sync-envelope.json",
+  "commitSha": "abc123",
+  "receivedAt": "2026-05-08T00:00:00.000Z"
+}
+```
+
+Consumer behavior:
+
+- read the envelope from R2
+- re-run schema and component path validation defensively
+- normalize components, relations, and events in bounded batches
+- keep duplicate `uploadId` handling idempotent
+- log only metadata, not raw envelopes or tokens
+- retry transient D1/R2 failures through the queue retry model
+
+Queue messages must never contain full envelopes, component states, logs, plans,
+or other large JSON payloads.
+
+---
+
 ## Normalization Rules
 
 - Upsert the namespace as kind `repo` from OIDC claims.
@@ -370,7 +461,6 @@ The initial normalizer can be deliberately simple. It must be deterministic, ide
 ## Deferred Features
 
 - GitHub App installation policy and repo allowlist.
-- Queue-backed async normalization.
 - R2 object refs for very large component states.
 - PR diff ingestion from GitHub API.
 - Scorecard calculation.
@@ -384,6 +474,8 @@ The initial normalizer can be deliberately simple. It must be deterministic, ide
 - Shared types define catalog envelopes, component summaries, detail, relations, and event payloads.
 - Worker exposes `POST /v1/catalog/sync` and the catalog read endpoints.
 - Catalog sync stores raw envelopes in R2 and normalized rows in D1.
+- Catalog sync and reads use the storage router once catalog shards exist.
+- Queue-backed ingestion stores/enqueues R2 references instead of full envelopes.
 - Catalog read endpoints enforce linked repo visibility.
 - Idempotent sync by `uploadId` is tested.
 - OIDC repo mismatch and dashboard/session writes are rejected.

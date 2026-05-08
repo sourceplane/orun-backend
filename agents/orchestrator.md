@@ -12,18 +12,19 @@ For every cycle:
 1. Read `/ai/context/current.md`
 2. Read `/ai/context/task-ledger.md`, `/ai/context/decisions.md`, and `/ai/context/open-risks.md`
 3. Read `/ai/state.json`
-4. Read only the relevant `/spec/**` files for the area being planned
-5. Inspect current repo code (not docs only)
-6. Inspect open PRs, merged PRs, failing tests, stale READMEs
-7. Compare progress vs original goal
-8. Identify production-grade gaps, integration risks, missing seams
-9. Inspect any outstanding `/ai/proposals/**` spec-change proposals
-10. Accept, revise, defer, or ask the user about proposals before baking them into new tasks
-11. Select next highest-leverage bounded task
-12. Generate detailed prompt file
-13. Wait for worker result
-14. Update state and the compact context files
-15. Repeat
+4. Read the relevant active V2 specs under `/spec/v2/**` for the area being planned
+5. Consult old `/spec/*.md` files only as V1 implementation reference, compatibility context, or migration evidence
+6. Inspect current repo code (not docs only)
+7. Inspect open PRs, merged PRs, failing tests, stale READMEs
+8. Compare progress vs V2 goal and current migration phase
+9. Identify production-grade gaps, integration risks, missing seams
+10. Inspect any outstanding `/ai/proposals/**` spec-change proposals
+11. Accept, revise, defer, or ask the user about proposals before baking them into new tasks
+12. Select next highest-leverage bounded task
+13. Generate detailed prompt file
+14. Wait for worker result
+15. Update state and the compact context files
+16. Repeat
 ---
 # Core Principle
 **Trust code reality over stale documentation.**
@@ -33,6 +34,39 @@ Always evaluate:
 - what passes quality gates
 - what contracts already exist
 - what next dependency unlocks the roadmap
+
+Active architecture source:
+
+* `/spec/v2/**` is the authoritative spec set for all new Orun SaaS work.
+* The old `/spec/*.md` files describe V1 behavior and are reference material
+  only. Use them to understand current code, compatibility obligations, and
+  migration details.
+* If a worker finds that V2 and code reality conflict, prefer a bounded
+  migration task or a V2 spec proposal. Do not silently fall back to V1 as the
+  product direction.
+* New task prompts must name the relevant V2 specs in `Read First`. Old specs
+  may appear under `Reference Only` when needed.
+
+Operational access assumptions:
+
+* The Orchestrator, Implementer, and Verifier may assume full authenticated
+  access to `gh` for GitHub PRs, Actions, checks, workflow logs, and repository
+  inspection.
+* They may assume full authenticated access to `wrangler` for Cloudflare
+  deploys, resource inspection, bindings, Workers, Pages, Queues, R2, D1,
+  Durable Objects, Hyperdrive, and secrets that are in task scope.
+* They may assume local `supabase` CLI is installed and already logged in to
+  the correct Supabase account for local workflows.
+* GitHub Actions must provide `SUPABASE_API_KEY` as the canonical Supabase
+  Management API secret for Terraform/Tactonic provisioning. Do not invent a
+  second Supabase API secret name without updating
+  `/spec/v2/07-provisioning-and-operations.md`.
+* Supabase database provisioning must be planned as a Tactonic Terraform
+  component task. If the exact Tactonic component naming or contract is unclear,
+  ask the user before implementation.
+* When credential scope, Supabase account/project, Cloudflare account,
+  GitHub repository target, environment target, or Tactonic naming is unclear,
+  ask the user instead of guessing.
 ---
 # Context Budget Rules
 Historical task prompts and implementer/verifier reports are preserved in:
@@ -73,7 +107,7 @@ Workers are allowed to identify needed spec updates without being blocked by the
 
 When an Implementer, Verifier, or the Orchestrator itself finds a spec update is needed, create a proposal file instead of silently changing direction:
 
-`/ai/proposals/task-0007-spec-update.md`
+`/ai/proposals/task-0021-spec-update.md`
 
 Proposal files must include:
 
@@ -103,12 +137,12 @@ Rules:
 `/ai/state.json`
 ```json
 {
-  "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 7,
-  "completed": [1,2,3,4,5,6],
-  "repo_health": "green",
-  "next_focus": "projects-worker",
-  "last_verified": "2026-05-01"
+  "goal": "Supabase/Postgres-backed multi-organization Orun SaaS control plane",
+  "current_task": 21,
+  "completed": [1,2,3],
+  "repo_health": "yellow",
+  "next_focus": "v2-db-foundation",
+  "last_verified": "2026-05-08"
 }
 ```
 
@@ -116,9 +150,9 @@ Rules:
 
 Task Files
 
-/ai/tasks/task-0007.md
+/ai/tasks/task-0021.md
 
-/ai/proposals/task-0007-spec-update.md when spec changes need Orchestrator review
+/ai/proposals/task-0021-spec-update.md when spec changes need Orchestrator review
 
 Every task file must contain:
 
@@ -151,7 +185,7 @@ Must:
 
 Report:
 
-/ai/reports/task-0007-implementer.md
+/ai/reports/task-0021-implementer.md
 
 Summary
 Files Changed
@@ -182,7 +216,7 @@ Must:
 
 Report:
 
-/ai/reports/task-0007-verifier.md
+/ai/reports/task-0021-verifier.md
 
 Result: PASS|FAIL
 Checks
@@ -245,7 +279,9 @@ If repo is failing:
 
 If docs are stale:
 
-* trust code, require a proposal for meaningful spec changes, update docs/specs intentionally
+* trust code for current behavior, trust `/spec/v2/**` for product direction,
+  require a proposal for meaningful V2 spec changes, and update docs/specs
+  intentionally
 
 If seams weak:
 
@@ -255,28 +291,34 @@ If seams weak:
 
 Example Prompt Output
 
-# Task 7
+# Task 21
 Agent: Implementer
 Current Repo Context:
-Tasks 1-6 complete.
-Membership + Policy live.
-Projects worker placeholder only.
-Root checks green.
+V2 specs are now authoritative. Existing V1 Cloudflare/D1 backend remains live
+and must keep compatibility behavior while V2 is introduced incrementally.
 Objective:
-Implement projects-worker with D1, environments, shared contracts, edge forwarding, tests.
+Create `packages/db` with the first Supabase/Postgres migration harness and
+core organization/user/project schema. Do not alter runtime API behavior yet.
 Read First:
-specs/components/05-projects-environments.md
-apps/api-edge/**
-packages/contracts/**
+spec/v2/README.md
+spec/v2/00-architecture.md
+spec/v2/01-data-model.md
+spec/v2/07-provisioning-and-operations.md
+spec/v2/06-migration-from-v1.md
+Reference Only:
+spec/07-storage.md
+migrations/**
 Constraints:
-No auth logic.
-No membership storage.
-No cross-domain DB reads.
+No V1 endpoint behavior changes.
+No D1 authoritative tenant additions.
+No secrets in migrations or fixtures.
 Acceptance:
-build, lint, typecheck, tests pass
-real project CRUD
-environment support
-PR opened
+Postgres migrations checked in.
+Supabase provisioning assumptions use `SUPABASE_API_KEY` and the Tactonic
+Terraform component contract.
+DB package typechecks.
+Core schema test or migration smoke exists.
+PR opened.
 
 ⸻
 

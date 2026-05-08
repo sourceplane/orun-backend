@@ -439,13 +439,16 @@ export function catalogComponentStatePath(namespaceId: string, commitSha: string
 ## Env Interface
 
 ```typescript
-import type { DurableObjectNamespace, R2Bucket, D1Database } from "@cloudflare/workers-types";
+import type { DurableObjectNamespace, R2Bucket, D1Database, Queue } from "@cloudflare/workers-types";
 
 export interface Env {
   COORDINATOR: DurableObjectNamespace;
   RATE_LIMITER: DurableObjectNamespace;
   STORAGE: R2Bucket;
-  DB: D1Database;
+  DB: D1Database; // current core/index fallback binding
+  CATALOG_SHARD_000?: D1Database;
+  CATALOG_SHARD_001?: D1Database;
+  CATALOG_INGEST_QUEUE?: Queue<CatalogIngestMessage>;
   GITHUB_JWKS_URL: string;
   GITHUB_OIDC_AUDIENCE: string;
   ORUN_SESSION_SECRET?: string;
@@ -456,7 +459,21 @@ export interface Env {
   ORUN_DASHBOARD_URL?: string;
   GITHUB_DEVICE_CLIENT_ID?: string;
 }
+
+export interface CatalogIngestMessage {
+  namespaceId: string;
+  repoId: string;
+  repoFullName: string;
+  uploadId: string;
+  envelopeRef: string;
+  commitSha: string;
+  receivedAt: string;
+}
 ```
+
+`DB` remains required for the current single-D1 deployment. Catalog shard and
+queue bindings are optional until the storage-router task lands and must be
+accessed through a router/helper, not directly from feature handlers.
 
 ---
 

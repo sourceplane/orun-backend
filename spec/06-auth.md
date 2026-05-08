@@ -322,6 +322,10 @@ async function getCachedJWKS(jwksUrl: string, env: Env): Promise<JsonWebKeySet> 
 }
 ```
 
+In the scalable storage topology, authentication/session/namespace metadata is
+part of the core control-plane D1 database. Auth code must not query catalog
+shards.
+
 ---
 
 ## Security Requirements
