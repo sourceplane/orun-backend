@@ -22,25 +22,28 @@
 - **Queue-backed catalog ingestion active:** Task 0018 provisioned
   `orun-catalog-ingest` and `orun-catalog-ingest-dlq`, activated
   `CATALOG_INGEST_QUEUE`, and hardened `namespaceId === repoId` plus upload ID
-  validation. Remaining queue risks: no DLQ replay tooling, custom-domain smoke
-  from GitHub Actions is blocked by Cloudflare WAF, and queue/DLQ/consumer
-  provisioning is not yet represented in CLI self-hosted bootstrap.
+  validation. Task 0020 added queue/DLQ/consumer/cron support to the
+  self-hosted CLI bootstrap path. Remaining queue risks: no DLQ replay tooling,
+  custom-domain smoke from GitHub Actions is blocked by Cloudflare WAF, and
+  disposable live smoke for self-hosted bootstrap has not been run because
+  credentials were unavailable.
 
 ## Live And Deployment Verification
 
-- Task 0015 live Cloudflare smoke was not run. Direct REST bootstrap is covered
-  by fake-server tests and dry-run smokes, but live provisioning should still be
-  tested with disposable Cloudflare resources after Task 0020 adds queues and
-  cron.
-- Task 0015 verifier noted `SetWorkerVars` PATCH binding behavior remains
-  unverified live; Task 0020 should either prove it safe or avoid binding
-  clobbering by construction.
-- Worker cron trigger configuration is not implemented by CLI bootstrap.
-- The `sourceplane/orun` embedded backend bundle currently has only migrations
-  0001-0005; production backend main has `0006_tenant_routes.sql`.
-- Queue provisioning, queue consumer attachment, cron configuration, shard
-  migration fan-out, and D1 read-replication/session behavior are not yet fully
-  represented in the self-hosted CLI bootstrap path.
+- Task 0020 resolved the Task 0015 CLI bootstrap gaps by embedding migration
+  0006 and adding queue/DLQ/consumer/cron support to
+  `orun backend init/status/destroy`.
+- Task 0020 resolved the `SetWorkerVars` binding-clobber risk by including
+  plain-text vars in the same Worker upload metadata as DO/D1/R2/queue bindings
+  on the bootstrap path. The standalone `SetWorkerVars` helper remains outside
+  the critical path.
+- Disposable live Cloudflare smoke for the self-hosted bootstrap path has still
+  not been run because Task 0020 implementer/verifier environments lacked
+  Cloudflare credentials. Fake-server tests and dry-run smokes cover the API
+  shape, but one isolated live smoke remains useful.
+- Shard migration fan-out and D1 read-replication/session behavior remain future
+  work. Multi-shard catalog D1 activation is still blocked by
+  `ai/proposals/task-0016-spec-update.md`.
 - GitHub Actions catalog sync through `https://orun-api.sourceplane.ai` is
   blocked by Cloudflare WAF managed challenge for GHA runner IPs. The workers.dev
   fallback succeeds and should remain the CI-safe smoke target until a WAF policy
