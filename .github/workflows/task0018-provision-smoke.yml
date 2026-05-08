@@ -40,12 +40,15 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      # -- Queue provisioning via Cloudflare REST API (avoids wrangler v3/v4 compat issues) --
+      - name: Build workspace packages (required before wrangler deploy)
+        run: pnpm exec turbo run build --filter="!@orun/worker" --filter="!@orun/dashboard"
+        working-directory: .
 
-      - name: Create orun-catalog-ingest queue (idempotent via REST API)
+      # -- Queue provisioning via Cloudflare REST API --
+
+      - name: Create orun-catalog-ingest queue (idempotent)
         working-directory: .
         run: |
-          # Check if queue exists
           LIST_RESP=$(curl -sS \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues")
@@ -68,7 +71,7 @@ jobs:
             echo "orun-catalog-ingest created successfully"
           fi
 
-      - name: Create orun-catalog-ingest-dlq queue (idempotent via REST API)
+      - name: Create orun-catalog-ingest-dlq queue (idempotent)
         working-directory: .
         run: |
           LIST_RESP=$(curl -sS \
@@ -93,7 +96,7 @@ jobs:
             echo "orun-catalog-ingest-dlq created successfully"
           fi
 
-      - name: Verify queue list via Cloudflare API
+      - name: Verify queues exist via Cloudflare API
         working-directory: .
         run: |
           echo "=== Cloudflare Queues list ==="
@@ -107,9 +110,9 @@ jobs:
       - name: Deploy Worker with queue bindings
         run: npx wrangler deploy --config wrangler.jsonc
 
-      # -- Verify consumer attachment via Cloudflare API --
+      # -- Verify consumer attachment --
 
-      - name: Verify consumer attachment via Cloudflare Queues API
+      - name: Verify consumer and producer attachment via Cloudflare Queues API
         working-directory: .
         run: |
           QUEUES_RESP=$(curl -sS \
@@ -124,6 +127,14 @@ jobs:
             exit 1
           fi
           echo "orun-catalog-ingest confirmed"
+
+          INGEST_CONSUMER_COUNT=$(echo "${QUEUES_RESP}" | jq -r '.result[] | select(.queue_name == "orun-catalog-ingest") | .consumers_total_count')
+          echo "orun-catalog-ingest consumer count: ${INGEST_CONSUMER_COUNT}"
+          if [ "${INGEST_CONSUMER_COUNT}" = "0" ] || [ -z "${INGEST_CONSUMER_COUNT}" ]; then
+            echo "WARNING: orun-catalog-ingest has no consumers yet. Consumer is attached via wrangler deploy."
+          else
+            echo "orun-catalog-ingest has ${INGEST_CONSUMER_COUNT} consumer(s)"
+          fi
 
           if ! echo "${QUEUES_RESP}" | jq -e '.result[] | select(.queue_name == "orun-catalog-ingest-dlq")' > /dev/null; then
             echo "ERROR: orun-catalog-ingest-dlq not found"
