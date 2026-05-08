@@ -92,4 +92,10 @@ export class R2Storage {
     });
     return key;
   }
+
+  // Returns the raw R2 object body by ref key so the caller can control JSON parsing.
+  // Throws on transient fetch failures; returns null if the object does not exist.
+  async readCatalogEnvelopeBody(envelopeRef: string): Promise<R2ObjectBody | null> {
+    return this.bucket.get(envelopeRef);
+  }
 }
