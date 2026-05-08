@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 20,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16, 17, 18],
+  "current_task": 21,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16, 17, 18, 19, 20],
   "repo_health": "yellow",
-  "next_focus": "task-0020-cli-bootstrap-completion-and-queue-provisioning",
+  "next_focus": "task-0021-v2-packages-db-migration-harness",
   "last_verified": "2026-05-08",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -62,6 +62,10 @@
     "Task 0018 verified PASS on 2026-05-08: queue provisioning and consumer hardening merged as PR #37 squash commit db0e5f0. Queues orun-catalog-ingest (queue_id f3774bba16d046b8b8f64e499ccf917c, consumer batch_size=10, max_retries=3, max_wait_time_ms=30000, dead_letter_queue=orun-catalog-ingest-dlq) and orun-catalog-ingest-dlq provisioned and confirmed via Cloudflare API. Worker deployed (version 07dce6f5). POST /v1/catalog/sync → 202 via workers.dev (custom domain blocked by WAF from GHA IPs). Unauthenticated read → 401 (workers.dev) / 403 (custom domain). Log safety fix: schemaVersion interpolation replaced with opaque code. CI smoke run 25544219282. Next: Task 0019.",
     "Task 0019 full-system verifier prompt produced on 2026-05-08: verify every implemented backend/dashboard/CLI/Cloudflare/CI-CD/auth/storage/catalog flow, re-check Task 0012 local conformance yellow risk, inventory live resources, exercise live endpoint matrix, verify sourceplane/orun CLI auth/remote-state/bootstrap, classify PASS/FAIL/PARTIAL, and recommend Task 0020.",
     "Task 0019 verifier result PARTIAL on 2026-05-08: no P0/P1 implemented failures. Local backend checks, CI/CD, queue-backed catalog ingestion via workers.dev, dashboard build/live HTML, sourceplane/orun Go checks, and security/data boundaries passed. Partial because a fresh CLI login is needed for full local remote-state conformance, browser dashboard visual QA was unavailable, and local CF credentials were absent. P2 gaps are CLI bootstrap queues/cron and embedded bundle missing migration 0006.",
-    "Task 0020 implementer prompt produced on 2026-05-08: update sourceplane/orun `orun backend init/status/destroy` to provision D1/R2/Worker/Queues/DLQ/consumer/cron, embed migration 0006+, verify disposable Cloudflare resources and endpoint smokes when credentials are available, and open a PR."
+    "Task 0020 implementer prompt produced on 2026-05-08: update sourceplane/orun `orun backend init/status/destroy` to provision D1/R2/Worker/Queues/DLQ/consumer/cron, embed migration 0006+, verify disposable Cloudflare resources and endpoint smokes when credentials are available, and open a PR.",
+    "Task 0020 implementation report received on 2026-05-08: sourceplane/orun PR #87 (head 07a3c21) is open and green. It embeds migration 0006, adds queue/consumer/cron support to Cloudflare bootstrap, avoids Task 0015 Worker binding clobber by uploading plain-text vars with bindings, and updates docs/tests. Live Cloudflare smoke was not run by the implementer.",
+    "Task 0020 verifier prompt produced on 2026-05-08: verify sourceplane/orun PR #87 against Task 0020, inspect local checks, PR CI logs, Cloudflare API shapes, and disposable live Cloudflare smoke if credentials are available. After PASS and merge, advance to V2 Task 0021: packages/db Postgres migration harness.",
+    "Task 0020 verified PASS on 2026-05-08: CLI bootstrap queue provisioning merged as PR #87 squash commit d8dd132. Embedded migration 0006, queue/DLQ/consumer/cron in init/status/destroy, binding-clobber risk resolved. All go test/race/vet pass. CI Orun Plan and Harness dry-run guard both SUCCESS. Live Cloudflare smoke not run (credentials unavailable). Verifier report at ai/reports/task-0020-verifier.md. Next: Task 0021 packages/db V2 Postgres migration harness.",
+    "Task 0021 implementer prompt produced on 2026-05-08: create packages/db as @orun/db, add a tested Supabase/Postgres migration harness, and check in bounded core V2 schema migration for users, organizations, membership, invites, billing placeholders, entitlements, and projects. No Supabase provisioning, Hyperdrive, /v2 routes, or V1 behavior changes."
   ]
 }
