@@ -17,17 +17,25 @@ Build a Cloudflare-first Orun control plane monorepo:
 
 ## Current State
 
-- Current task pointer: task 0016
+- Current task pointer: task 0017
 - Last verified: 2026-05-08
 - Repo health: yellow
 - Live Worker: `https://orun-api.sourceplane.ai`
 - Live Dashboard: `https://orun-dashboard.sourceplane.ai`
 - Stack version: `oci://ghcr.io/sourceplane/stack-tectonic:0.12.0`
+- Next focus: Task 0017 catalog queue consumer (`CATALOG_INGEST_QUEUE` → `normalizeComponents` → D1)
 
 Repo health is yellow because the original Task 0012 local conformance verifier
 report is still recorded as FAIL and no Task 0012.1 verifier report exists,
 although later remediation tasks passed. Treat this as a bookkeeping and
 re-verification risk, not as evidence that the current main branch is broken.
+
+The latest architecture update from `scalable-db-conversations.txt` keeps Orun
+Cloudflare-first but rejects the long-term "one giant D1" shape. The durable
+direction is core D1 for lean control-plane metadata, D1 catalog/run shards for
+queryable derived indexes, R2 for raw artifacts and large JSON payloads, Queues
+for async ingestion pointer messages, Durable Objects for live coordination, and
+Hyperdrive/Postgres only as a later escape hatch for large tenants or analytics.
 
 ## Default Read Order
 

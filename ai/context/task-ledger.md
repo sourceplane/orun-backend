@@ -53,3 +53,10 @@ the task is directly related to the current change.
 | 0013.1 | PASS | Catalog sync now synchronously rejects missing/non-string `component.path` before `ctx.waitUntil`; regression tests added. |
 | 0014 | PASS, PR #33 | Catalog-first dashboard UI using Task 0013 APIs while preserving run/job/log workflows. |
 | 0015 | PASS, sourceplane/orun PR #86 | `orun backend init/status/destroy` with embedded backend bundle and direct Cloudflare REST APIs; verifier fixed Worker upload metadata and DO migration tag propagation before merge. |
+
+## Planned Scalable Data Plane
+
+| Task | Status | Compact Outcome |
+|---|---|---|
+| 0016 | PASS, PR #35 | StorageRouter with FNV hash routing and single-DB fallback; queue-backed ingestion with CATALOG_INGEST_QUEUE; ctx.waitUntil fallback; shard-grouped reads; migrations/0006_tenant_routes.sql. Cross-shard JOIN limitation deferred (proposal at ai/proposals/task-0016-spec-update.md). |
+| 0017 | PENDING | Queue consumer: read CatalogIngestMessage from CATALOG_INGEST_QUEUE, call shared normalizeComponents, handle retries. Message shape and normalizer ready. |

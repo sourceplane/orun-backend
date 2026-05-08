@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 16,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15],
+  "current_task": 17,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16],
   "repo_health": "yellow",
-  "next_focus": "task-0016",
+  "next_focus": "task-0017-queue-consumer",
   "last_verified": "2026-05-08",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -49,6 +49,10 @@
     "Task 0015 implementation complete on 2026-05-08: PR #86 opened in sourceplane/orun (branch codex/task-0015-backend-bootstrap). Implements orun backend init/status/destroy via Cloudflare REST APIs; embedded Worker bundle (124K) and 5 D1 migrations; fake-server tests; all go test/race/vet pass. Live Cloudflare smoke not run (no credentials in implementer env). Verifier to review PR #86.",
     "Task 0015 verifier prompt produced on 2026-05-08: verify sourceplane/orun PR #86 head e7331c2, including Cloudflare REST API shape review, local go test/race/vet, dry-run smokes, secret/config safety, and optional disposable live Cloudflare smoke.",
     "Task 0015 verified PASS on 2026-05-08: orun backend init/status/destroy command group merged as PR #86 squash commit afd3828. Verifier fixed two API shape issues before merge: (1) body_part → main_module for ES Module Worker upload; (2) new_tag now propagated in DO migrations metadata. All go test/race/vet pass. Live Cloudflare smoke not run. Risk notes: SetWorkerVars PATCH binding behavior unverified live; cron trigger not configured (known gap). Advancing to task-0016.",
-    "AI context compaction performed on 2026-05-08: historical ai/tasks and ai/reports through Task 0015 were compressed into ai/archive/tasks-reports-20260508.tar.gz, and ai/context/* is now the default startup context."
+    "AI context compaction performed on 2026-05-08: historical ai/tasks and ai/reports through Task 0015 were compressed into ai/archive/tasks-reports-20260508.tar.gz, and ai/context/* is now the default startup context.",
+    "Scalable Cloudflare data-plane decision accepted from scalable-db-conversations.txt on 2026-05-08: keep Cloudflare-native, but treat one D1 database as bootstrap only. Target topology is core D1 for lean control-plane metadata, D1 catalog/run shards for queryable indexes, R2 for raw artifacts/logs/envelopes/snapshots, Queues for async ingestion pointer messages, Durable Objects for live coordination, and Hyperdrive/Postgres only as a future large-tenant or analytics escape hatch.",
+    "Task 0016 next focus: implement storage router, catalog shard routing, and queue-backed catalog ingestion while preserving the current single-DB local/bootstrap fallback.",
+    "Task 0016 verifier prompt produced on 2026-05-08 for PR #35 (head ca23985373d26090b19ee68fdf5df85d7dca2194). Verifier must assess ai/proposals/task-0016-spec-update.md because the reported cross-shard JOIN limitation may conflict with the shard-support acceptance criteria.",
+    "Task 0016 verified PASS on 2026-05-08: storage router/catalog shards/queue-backed ingestion merged as PR #35 squash commit a56aa13. StorageRouter with FNV hash routing and single-DB fallback; CATALOG_INGEST_QUEUE optional queue path; ctx.waitUntil fallback; upload idempotency in sync path; shard-grouped reads; migrations/0006_tenant_routes.sql. 215 worker tests + 57 dashboard tests. CI run 25537633631 all 10 checks green. Cross-shard JOIN limitation accepted as deferred pre-production risk — must resolve ai/proposals/task-0016-spec-update.md Option 3 before activating multi-shard D1 bindings. Next: Task 0017 queue consumer."
   ]
 }
