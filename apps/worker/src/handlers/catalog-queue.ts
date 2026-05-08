@@ -33,7 +33,7 @@ function validateEnvelopeAgainstMessage(
   message: CatalogIngestMessage,
 ): string | null {
   if (envelope.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
-    return `unsupported schemaVersion: ${envelope.schemaVersion}`;
+    return "unsupported_schema_version";
   }
   if (envelope.uploadId !== message.uploadId) {
     return "upload_id_mismatch";
