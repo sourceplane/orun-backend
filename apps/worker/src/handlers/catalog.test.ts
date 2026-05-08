@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "@orun/types";
 import type { RequestContext } from "../auth";
-import type { CatalogSyncEnvelope } from "@orun/types";
+import type { CatalogSyncEnvelope, CatalogIngestMessage } from "@orun/types";
 
 function makeDONamespace(): DurableObjectNamespace {
   const stub = {
@@ -82,6 +82,32 @@ function makeD1Database(opts: MockD1Options = {}): D1Database {
     };
   });
   return { prepare: prepared } as unknown as D1Database;
+}
+
+function makeEnvWithQueue(opts: MockD1Options = {}): {
+  env: Env;
+  enqueuedMessages: CatalogIngestMessage[];
+} {
+  const enqueuedMessages: CatalogIngestMessage[] = [];
+  const env = {
+    COORDINATOR: makeDONamespace(),
+    RATE_LIMITER: makeDONamespace(),
+    STORAGE: makeR2Bucket(),
+    DB: makeD1Database(opts),
+    GITHUB_JWKS_URL: "https://token.actions.githubusercontent.com/.well-known/jwks",
+    GITHUB_OIDC_AUDIENCE: "orun",
+    ORUN_SESSION_SECRET: "test-secret",
+    ORUN_DEPLOY_TOKEN: "test-deploy-token",
+    GITHUB_CLIENT_ID: "test-client-id",
+    GITHUB_CLIENT_SECRET: "test-client-secret",
+    ORUN_PUBLIC_URL: "https://api.orun.test",
+    CATALOG_INGEST_QUEUE: {
+      send: vi.fn(async (msg: CatalogIngestMessage) => {
+        enqueuedMessages.push(msg);
+      }),
+    },
+  } as unknown as Env;
+  return { env, enqueuedMessages };
 }
 
 function makeEnv(opts: MockD1Options = {}): Env {
@@ -453,5 +479,92 @@ describe("Catalog API", () => {
       const resp = await routeRequest(req("GET", "/v1/repos/123456/components"), env, ctx);
       expect(resp.status).toBe(200);
     });
+  });
+});
+
+describe("Catalog sync — queue path", () => {
+  let ctx: ExecutionContext & { _flush: () => Promise<unknown[]> };
+
+  beforeEach(() => {
+    ctx = makeExecutionContext();
+    __setMockAuth({
+      type: "oidc",
+      namespace: { namespaceId: "123456", namespaceSlug: "test-org/test-repo" },
+      allowedNamespaceIds: ["123456"],
+      actor: "test-actor",
+    });
+  });
+
+  it("enqueues a CatalogIngestMessage and does NOT call ctx.waitUntil for normalization when queue binding exists", async () => {
+    const { env: envWithQueue, enqueuedMessages } = makeEnvWithQueue();
+    const waitUntilSpy = vi.spyOn(ctx, "waitUntil");
+
+    const resp = await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope()), envWithQueue, ctx);
+    expect(resp.status).toBe(202);
+
+    expect(enqueuedMessages).toHaveLength(1);
+    // waitUntil is not called for normalization when queue is present
+    expect(waitUntilSpy).not.toHaveBeenCalled();
+  });
+
+  it("enqueued message contains only routing metadata and R2 ref — no full envelope", async () => {
+    const { env: envWithQueue, enqueuedMessages } = makeEnvWithQueue();
+    await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope()), envWithQueue, ctx);
+
+    expect(enqueuedMessages).toHaveLength(1);
+    const msg = enqueuedMessages[0];
+    expect(msg.namespaceId).toBe("123456");
+    expect(msg.repoId).toBe("123456");
+    expect(msg.repoFullName).toBe("test-org/test-repo");
+    expect(msg.uploadId).toBe("upl-test-001");
+    expect(msg.commitSha).toBe("abc123def456");
+    expect(typeof msg.envelopeRef).toBe("string");
+    expect(msg.envelopeRef).toContain("catalog/uploads");
+    expect(typeof msg.receivedAt).toBe("string");
+
+    // Must not contain component-level data
+    const msgAsRecord = msg as unknown as Record<string, unknown>;
+    expect(msgAsRecord["components"]).toBeUndefined();
+    expect(msgAsRecord["plan"]).toBeUndefined();
+    expect(msgAsRecord["token"]).toBeUndefined();
+  });
+
+  it("R2 envelope is written synchronously (before response) when queue binding exists", async () => {
+    const { env: envWithQueue } = makeEnvWithQueue();
+    const resp = await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope()), envWithQueue, ctx);
+    expect(resp.status).toBe(202);
+    // R2 is written in the sync path — no flush needed
+    const r2 = envWithQueue.STORAGE as unknown as { _store: Map<string, string> };
+    const envelopeKey = [...r2._store.keys()].find((k) => k.includes("catalog/uploads"));
+    expect(envelopeKey).toBeDefined();
+  });
+
+  it("falls back to ctx.waitUntil normalization when no queue binding", async () => {
+    const envNoQueue = makeEnv();
+    const waitUntilSpy = vi.spyOn(ctx, "waitUntil");
+
+    const resp = await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope()), envNoQueue, ctx);
+    expect(resp.status).toBe(202);
+    expect(waitUntilSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 202 with correct shape on queue path", async () => {
+    const { env: envWithQueue } = makeEnvWithQueue();
+    const resp = await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope()), envWithQueue, ctx);
+    const data = await resp.json() as { uploadId: string; acceptedAt: string; componentCount: number };
+    expect(data.uploadId).toBe("upl-test-001");
+    expect(data.componentCount).toBe(1);
+    expect(typeof data.acceptedAt).toBe("string");
+  });
+
+  it("queue path still respects idempotency — duplicate uploadId returns 202 without re-enqueuing", async () => {
+    const { env: envWithQueue, enqueuedMessages } = makeEnvWithQueue({ uploadExists: true });
+    const resp = await routeRequest(
+      req("POST", "/v1/catalog/sync", makeValidEnvelope({ uploadId: "upl-dup" })),
+      envWithQueue,
+      ctx
+    );
+    expect(resp.status).toBe(202);
+    expect(enqueuedMessages).toHaveLength(0);
   });
 });

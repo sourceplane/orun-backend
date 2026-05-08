@@ -343,6 +343,22 @@ export interface ApiError {
   code: ErrorCode;
 }
 
+// ─── Storage Routing Types ────────────────────────────────────────────────────
+
+export interface CatalogIngestMessage {
+  namespaceId: string;
+  repoId: string;
+  repoFullName: string;
+  uploadId: string;
+  envelopeRef: string;
+  commitSha: string;
+  receivedAt: string;
+}
+
+export interface CatalogQueue {
+  send(message: CatalogIngestMessage): Promise<void>;
+}
+
 // ─── Worker Environment ──────────────────────────────────────────────────────
 
 export interface Env {
@@ -359,4 +375,9 @@ export interface Env {
   ORUN_PUBLIC_URL?: string;
   ORUN_DASHBOARD_URL?: string;
   GITHUB_DEVICE_CLIENT_ID?: string;
+  // Optional catalog ingest queue — when present, catalog sync enqueues R2-ref messages
+  CATALOG_INGEST_QUEUE?: CatalogQueue;
+  // Optional bounded catalog shard D1 bindings — when absent, DB is the fallback
+  DB_CATALOG_0?: D1Database;
+  DB_CATALOG_1?: D1Database;
 }

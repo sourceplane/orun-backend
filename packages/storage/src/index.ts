@@ -8,3 +8,5 @@ export type {
   CatalogEventInput,
   CatalogComponentFilter,
 } from "./d1";
+export { D1StorageRouter, hashNamespaceId } from "./router";
+export type { StorageRouter, StorageRouterConfig } from "./router";
