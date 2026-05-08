@@ -49,6 +49,21 @@ The critical design insight driving this order: **build the cloud control plane 
                │
                ▼
  [15] CLI Bootstrap
+               │
+               ▼
+ [16] Scalable Cloudflare Storage Routing
+               │
+               ▼
+ [17] Catalog Queue Consumer
+               │
+               ▼
+[18] Catalog Queue Provisioning + E2E Smoke
+        │
+        ▼
+[19] Full-System Verification Gate
+        │
+        ▼
+[20] CLI Bootstrap Completion + Queue Provisioning
 ```
 
 Tasks [03], [04], [05] are independent and can be delegated in parallel after [02] completes.
@@ -343,6 +358,150 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 - Embed Worker JS bundle via `//go:embed`
 - `orun backend init`, `orun backend status`, `orun backend destroy`
 
+## Phase 5 — Scalable Cloudflare Data Plane
+
+The repo now has a live Worker, catalog sync/read APIs, dashboard UI, and CLI
+bootstrap. The next leverage point is the storage seam: current code still uses
+one D1 binding for core metadata, run indexes, and catalog indexes. That is fine
+for the shipped slice, but it conflicts with the scalable Cloudflare design in
+`scalable-db-conversations.txt` and the updated storage specs.
+
+### Task 16 — Storage Router, Catalog Shards, and Queue-Backed Ingestion
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/00-constitution.md`, `spec/01-monorepo-structure.md`, `spec/02-devops.md`, `spec/03-types-package.md`, `spec/04-worker-api.md`, `spec/07-storage.md`, `spec/12-catalog-index.md`
+**Depends on**: Task 15
+
+Introduce the production storage routing seam without broad feature work:
+- add a typed storage router that distinguishes core D1 from catalog/run index D1
+- preserve current single-`DB` behavior as the default/local fallback
+- add a bounded catalog shard configuration path and tests for shard selection
+- route catalog sync and catalog reads through the storage router
+- add queue-backed catalog ingestion where bindings are available, using R2 refs
+  in messages, and keep a `ctx.waitUntil` local fallback
+- keep raw envelopes, component states, plans, logs, and snapshots in R2
+- avoid one-D1-per-tenant Worker bindings; use hash-routed shards first
+- document the migration/deployment implications for Cloudflare resources and
+  local Miniflare tests
+
+**Validation**:
+- Unit tests prove deterministic shard routing and no direct catalog handler
+  dependency on `env.DB`.
+- Existing catalog sync/read tests pass with the single-`DB` fallback.
+- New tests prove queue messages contain references only, not full envelopes.
+- Dashboard read authorization still excludes local namespaces.
+- `pnpm exec turbo run test typecheck build` passes.
+- `kiox -- orun plan --changed` and `kiox -- orun run --changed` pass if the
+  task touches delivery wiring.
+
+### Task 17 — Catalog Queue Consumer
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/04-worker-api.md`, `spec/07-storage.md`, `spec/12-catalog-index.md`
+**Depends on**: Task 16
+
+Implement the queue consumer side of catalog ingestion:
+- add a Worker `queue(batch, env, ctx)` handler
+- read `CatalogIngestMessage` batches from `CATALOG_INGEST_QUEUE`
+- load raw catalog envelopes from R2 using `envelopeRef`
+- defensively re-validate message and envelope metadata
+- call the shared catalog normalizer to write component, relation, and event rows
+- handle poison messages without infinite retry loops
+- let transient R2/D1 failures retry through Cloudflare Queues semantics
+- keep production multi-shard D1 bindings inactive until the cross-shard JOIN
+  proposal is resolved
+
+**Validation**:
+- Queue consumer success, poison-message, and transient-retry tests pass.
+- Existing catalog sync fallback tests still pass.
+- `pnpm exec turbo run test typecheck build` passes.
+- No `DB_CATALOG_0` / `DB_CATALOG_1` production binding is activated.
+
+### Task 18 — Catalog Queue Provisioning and End-to-End Smoke
+
+**Delegate to**: 1 agent
+**Input specs**: `spec/00-constitution.md`, `spec/01-monorepo-structure.md`, `spec/02-devops.md`, `spec/03-types-package.md`, `spec/04-worker-api.md`, `spec/07-storage.md`, `spec/12-catalog-index.md`
+**Depends on**: Task 17
+
+Activate the queue-backed catalog ingestion path for the current single-D1
+Cloudflare deployment:
+- harden consumer validation for `namespaceId === repoId` and matching
+  `uploadId`
+- add `CATALOG_INGEST_QUEUE` producer and consumer config to
+  `apps/worker/wrangler.jsonc`
+- document or perform Cloudflare queue provisioning, including DLQ choice
+- prove `POST /v1/catalog/sync` enqueues an R2-reference message and the queue
+  consumer normalizes it into the catalog index
+- keep `DB_CATALOG_0` / `DB_CATALOG_1` inactive until the cross-shard JOIN
+  proposal is resolved
+
+**Validation**:
+- Queue hardening and end-to-end queue path tests pass.
+- `pnpm exec turbo run test typecheck build` passes.
+- `kiox -- orun plan --changed` and `kiox -- orun run --changed` pass because
+  this task touches Worker delivery configuration.
+- If Cloudflare credentials are available, the queue resource is provisioned and
+  a live queue smoke verifies production consumption.
+
+### Task 19 — Full-System Verification Gate
+
+**Delegate to**: 1 verifier agent
+**Input specs**: all specs, compact AI context, latest Task 0016-0018 reports,
+and sibling `sourceplane/orun` CLI repo
+**Depends on**: Task 18
+
+Run a release-grade verification pass over all implemented work:
+- backend local typecheck/test/build and targeted package tests
+- main CI and stack-tectonic delivery logs
+- Cloudflare Worker, D1, R2, Durable Object, Queue, and Pages resources
+- live endpoint matrix for unauthenticated, OIDC, and session/CLI routes
+- queue-backed catalog ingestion and read APIs
+- dashboard live auth/visual smoke
+- sourceplane/orun CLI auth, remote-state, local conformance, and backend
+  bootstrap
+- security/data boundary review and spec drift review
+- close or explicitly keep open the Task 0012 repo-health-yellow risk
+- produce a PASS/FAIL/PARTIAL report and recommend Task 0020
+
+**Validation**:
+- `ai/reports/task-0019-verifier.md` contains evidence for every implemented
+  subsystem and a clear go/no-go result.
+- Live Cloudflare and endpoint checks are included, not only local tests.
+- Known deferred work is separated from implemented-but-broken behavior.
+
+### Task 20 — CLI Bootstrap Completion and Queue Provisioning
+
+**Delegate to**: 1 implementer agent
+**Input specs**: Task 0019 verifier report, compact AI context, current
+Cloudflare API docs, and sibling `sourceplane/orun` CLI repo
+**Depends on**: Task 19
+**Primary repo**: `sourceplane/orun`
+
+Bring the self-hosted bootstrap path up to the production Cloudflare resource
+shape:
+- refresh the embedded backend bundle and migrations through
+  `0006_tenant_routes.sql`
+- add queue, DLQ, queue consumer, queue producer binding, and cron schedule
+  support to the direct Cloudflare REST client
+- extend `orun backend init/status/destroy` to manage D1, R2, Worker, Queue,
+  DLQ, consumer, cron, vars, and secrets idempotently
+- keep multi-shard D1 bindings inactive until the cross-shard JOIN proposal is
+  resolved
+- document the new flags, permissions, lifecycle, and workers.dev WAF fallback
+  guidance
+- verify with Go tests, dry-run smokes, and disposable Cloudflare resources when
+  credentials are available
+
+**Validation**:
+- `go test ./...`, targeted race tests, and `go vet ./...` pass in
+  `sourceplane/orun`.
+- Dry-run output reports 6+ migrations, queue, DLQ, consumer, and cron without
+  printing secrets.
+- Fake-server tests prove Cloudflare queue/consumer/schedule API calls and
+  Worker queue binding metadata.
+- Disposable Cloudflare smoke verifies created resources and basic endpoint
+  responses when credentials are available.
+
 ---
 
 ## Validation Checklist Before Each Phase Handoff
@@ -388,6 +547,18 @@ Implement auto-provisioning of Cloudflare resources from the CLI:
 - [ ] The dashboard's first screen is the catalog, with existing run/log views preserved
 - [ ] Component detail answers ownership, repo/path, environment, dependency, latest run, and raw artifact questions
 
+### Phase 5 scalable data plane complete when:
+
+- [ ] Storage routing distinguishes core metadata from catalog/run indexes.
+- [ ] Catalog ingestion can enqueue R2-reference messages and normalize
+  asynchronously through a configured Cloudflare Queue.
+- [ ] Catalog reads query only the shards that hold the caller's visible
+  namespaces.
+- [ ] The current single-D1 deployment remains supported as a local/bootstrap
+  fallback.
+- [ ] Specs and deployment docs identify all D1, R2, Queue, and optional
+  Hyperdrive bindings needed for production.
+
 ---
 
 ## Cloudflare Resources Needed
@@ -396,6 +567,7 @@ The implementer needs access to a Cloudflare account with:
 - Workers Paid plan (for Durable Objects)
 - R2 enabled
 - D1 enabled
+- Queues enabled for async catalog ingestion
 
 For development: `wrangler dev` runs everything locally with Miniflare (no account needed).
 
@@ -404,6 +576,7 @@ For deployment: A Cloudflare API token with permissions:
 - `Durable Objects:Edit`
 - `D1:Edit`
 - `R2:Edit`
+- `Queues:Edit` when provisioning queue-backed ingestion
 
 ---
 

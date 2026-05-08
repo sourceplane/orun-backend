@@ -29,6 +29,9 @@ async function getTier(namespaceId: string, db: D1Database): Promise<"free" | "p
 }
 ```
 
+In the scalable storage topology, this query uses the core control-plane D1
+database, not catalog/run shards.
+
 ---
 
 ## Implementation Options

@@ -4,7 +4,8 @@ The cloud control plane for the [orun CLI](https://github.com/sourceplane/orun) 
 
 When multiple GitHub Actions runners execute `orun run <plan-id> --remote-state` concurrently, they use this backend to coordinate: claim jobs atomically, check dependency status, and report results without race conditions.
 
-Built entirely on Cloudflare: Workers, Durable Objects, R2, and D1.
+Built entirely on Cloudflare: Workers, Durable Objects, R2, D1, and Queues as
+the ingestion path scales.
 
 ---
 
@@ -19,19 +20,27 @@ GitHub Actions Runner          Browser (UI)
                      │
              Cloudflare Worker (API)
                      │
-        ┌────────────┼────────────┐
-        │            │            │
-  Durable Object   D1 DB         R2
-  (per run)      (index)      (logs/artifacts)
-  job state      dashboard
-  coordination   queries
+        ┌────────────┼────────────┬────────────┐
+        │            │            │            │
+  Durable Object   D1 core    D1 shards       R2
+  (per run)      accounts     catalog/run   logs/artifacts
+  job state      routing      indexes       raw envelopes
+  coordination                queries       snapshots
+                     │
+                  Queues
+              async ingestion
 ```
 
 **Durable Objects** are the source of truth for execution state. One DO per run — single-threaded, no race conditions, atomic job claiming.
 
 **R2** stores logs and artifacts. Append-only, never polled for coordination.
 
-**D1** stores a queryable index for the dashboard: runs/jobs today, catalog components/relations/events next. It is eventually consistent and derived from DO state or catalog sync uploads.
+**D1** stores queryable metadata only. The scalable design splits a small core
+database from catalog/run shards; both remain eventually consistent and derived
+from DO state or catalog sync uploads.
+
+**Queues** carry small R2-reference messages for ingestion and normalization.
+GitHub Actions should not wait for heavy catalog processing.
 
 ---
 
@@ -40,6 +49,7 @@ GitHub Actions Runner          Browser (UI)
 - **Identity**: `repository_id` (GitHub's numeric ID, not `org/repo`) is the canonical namespace. Survives renames and transfers.
 - **Auth**: GitHub OIDC for CI runners, GitHub OAuth/device login for humans (dashboard and local CLI), Orun-issued short-lived tokens for remote-state coordination.
 - **Accounts**: Optional. The system works without accounts via OIDC. Accounts add dashboard visibility and higher rate limits.
+- **Storage scale**: Core metadata stays in a lean D1 database; catalog/run indexes shard across D1; R2 stores raw artifacts; Hyperdrive/Postgres is an escape hatch for large tenants or analytics.
 - **No zero-trust encryption** in Phase 1. Strong namespace isolation at every storage layer.
 
 ---

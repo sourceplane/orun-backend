@@ -23,6 +23,14 @@
 ## Platform Shape
 
 - The backend is Cloudflare-first: Worker API, Durable Objects, D1, and R2.
+- The scalable data-plane design is Cloudflare-native but not single-D1-native:
+  core metadata stays in a lean D1 database; catalog/run indexes shard across D1;
+  R2 stores raw envelopes, logs, plans, component states, and snapshots; Queues
+  carry small ingestion pointer messages; Hyperdrive/Postgres remains an escape
+  hatch for large tenants or analytics.
+- The current `env.DB` single-D1 binding is a bootstrap/local fallback, not the
+  long-term storage contract. New high-volume catalog/run work should introduce
+  or use a storage router instead of hardcoding catalog access to `env.DB`.
 - `kiox`/`orun` with stack-tectonic drives CI/CD and deployment intent.
 - Live canonical URLs are:
   - Worker: `https://orun-api.sourceplane.ai`
@@ -53,3 +61,6 @@
   Orun Cloud indexes history, graph, CI intelligence, and automation state.
 - Catalog APIs and shared client contracts should be built before broad UI
   rewrites.
+- Catalog ingestion must move toward queue-backed normalization before being
+  treated as production-scale. Queue messages contain R2 references and routing
+  metadata, not full catalog envelopes.

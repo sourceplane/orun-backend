@@ -6,6 +6,10 @@ This spec defines the account model, repo linking flow, and permission verificat
 
 **Agent task**: Implement `packages/worker/src/handlers/accounts.ts` and related D1 queries.
 
+In the scalable storage topology, all account, repo-link, repo-cache, CLI
+session, and entitlement queries use the core control-plane D1 database. They do
+not read catalog/run shard tables directly.
+
 ---
 
 ## Core Principle

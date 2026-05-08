@@ -316,8 +316,11 @@ The Worker's `wrangler.jsonc` lives inside `apps/worker/`. Coding agents must no
     "bindings": [
       {
         "name": "COORDINATOR",
-        "class_name": "RunCoordinator",
-        "script_name": "orun-api"
+        "class_name": "RunCoordinator"
+      },
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimitCounter"
       }
     ]
   },
@@ -331,17 +334,38 @@ The Worker's `wrangler.jsonc` lives inside `apps/worker/`. Coding agents must no
     {
       "binding": "DB",
       "database_name": "orun-db",
-      "database_id": "PLACEHOLDER"
+      "database_id": "PLACEHOLDER",
+      "migrations_dir": "../../migrations"
     }
   ],
   "vars": {
     "GITHUB_JWKS_URL": "https://token.actions.githubusercontent.com/.well-known/jwks",
     "GITHUB_OIDC_AUDIENCE": "orun"
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
   }
 }
 ```
 
-Binding names used throughout code: `COORDINATOR`, `STORAGE`, `DB`.
+Binding names used throughout the current code: `COORDINATOR`, `RATE_LIMITER`,
+`STORAGE`, and `DB`.
+
+The scalable storage design must evolve this without breaking local Miniflare
+development:
+
+- `DB` remains the bootstrap/current binding until a storage-router task lands.
+- The logical role of `DB` after routing is `CORE_DB`: tenants, accounts,
+  repo/cache metadata, billing mirrors, feature flags, and `tenant_routes`.
+- Catalog/run query indexes move behind catalog shard bindings such as
+  `CATALOG_SHARD_000`, `CATALOG_SHARD_001`, etc. Start with a small bounded
+  shard count and make the router config-driven so the count can grow.
+- Queue-backed ingestion adds a `CATALOG_INGEST_QUEUE` binding. Queue messages
+  contain R2 object references and routing metadata, never full catalog
+  envelopes.
+- Do not bind one D1 database per tenant in the Worker config as the first scale
+  step. Workers have binding limits; use hash-routed catalog shards first, then
+  dedicated tenant D1/Postgres routes for exceptional tenants.
 
 ---
 
@@ -352,13 +376,21 @@ All Workers and DOs receive an `Env` object. The interface is defined in `packag
 ```typescript
 interface Env {
   COORDINATOR: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace;
   STORAGE: R2Bucket;
-  DB: D1Database;
+  DB: D1Database;                  // current core/index DB binding
+  CATALOG_SHARD_000?: D1Database;  // future shard binding examples
+  CATALOG_SHARD_001?: D1Database;
+  CATALOG_INGEST_QUEUE?: Queue;
   GITHUB_JWKS_URL: string;
   GITHUB_OIDC_AUDIENCE: string;
   ORUN_DEPLOY_TOKEN?: string;   // set as secret, not var
 }
 ```
+
+Agents should not import `env.CATALOG_SHARD_000` directly from handlers. Add a
+small storage router in `packages/storage` or a Worker-adjacent storage module
+that chooses the correct catalog backend from tenant/repo routing metadata.
 
 ---
 

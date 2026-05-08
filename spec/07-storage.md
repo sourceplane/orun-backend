@@ -2,9 +2,115 @@
 
 ## Scope
 
-This package provides typed utility functions for accessing Cloudflare R2 (logs, plans, artifacts) and D1 (dashboard index). It is a shared library used by the Worker. All storage is namespace-isolated.
+This package provides typed utility functions for accessing Cloudflare R2 (logs,
+plans, artifacts), D1 (core metadata and dashboard indexes), and the storage
+routing seam between logical database roles. It is a shared library used by the
+Worker. All storage is namespace-isolated.
 
 **Agent task**: Implement `packages/storage/src/r2.ts` and `packages/storage/src/d1.ts`.
+
+---
+
+## Cloudflare Storage Topology
+
+Cloudflare remains the first-choice platform for Orun, but the storage layer must
+scale horizontally. Do not design future work around one giant D1 database for
+all tenants, catalog rows, runs, logs, analytics, accounts, and billing mirrors.
+
+The target topology is:
+
+```text
+Worker API
+  -> core D1 database
+       accounts, users, repo cache, memberships, entitlements, tenant_routes
+  -> catalog/run D1 shards
+       queryable components, relations, upload index, run/job summaries
+  -> R2
+       raw plans, logs, sync envelopes, component states, snapshots
+  -> Queues
+       pointer messages for async ingestion and normalization
+  -> Durable Objects
+       live execution state, job claims, locks, heartbeats
+  -> optional Hyperdrive/Postgres
+       large tenant or analytics backend when D1 shards are no longer enough
+```
+
+The current implementation uses a single `DB` binding containing accounts,
+sessions, namespaces, run index rows, and catalog rows. That is acceptable for
+the already-shipped bootstrap/product slices, but it is not the long-term
+contract. New storage work must introduce a routing seam before adding
+high-volume ingestion.
+
+### Logical Database Roles
+
+| Role | Cloudflare primitive | Stores | Must not store |
+|------|----------------------|--------|----------------|
+| Core control plane | D1 | accounts, repo cache, namespaces, billing mirror, feature flags, tenant routes, shard assignments | logs, raw plans, raw envelopes, component snapshots, large history |
+| Catalog/run index | D1 shards | components, relations, uploads, events, run/job summaries, policy/scorecard indexes | raw artifacts, long logs, huge JSON blobs, cross-tenant analytics lake |
+| Artifact plane | R2 | plans, logs, catalog envelopes, component states, snapshots, raw webhook payloads | coordination decisions |
+| Ingestion plane | Queues | R2 refs plus namespace/repo/upload routing metadata | full catalog envelopes or logs |
+| Live execution plane | Durable Objects | current run state, job claims, dependency readiness, heartbeats, locks | dashboard query history as source of truth |
+
+### Routing Model
+
+Add a small storage router before implementing queue-backed ingestion. The router
+owns shard selection and backend lookup. Handlers and storage methods should ask
+for a logical store instead of reading shard bindings directly.
+
+Initial routing:
+
+```text
+catalogShard = hash(namespaceId) % shardCount
+```
+
+The core D1 database owns route metadata:
+
+```sql
+CREATE TABLE tenant_routes (
+  route_key      TEXT PRIMARY KEY, -- tenant ID, account ID, or namespace ID
+  route_scope    TEXT NOT NULL,    -- tenant | account | namespace
+  backend_type   TEXT NOT NULL,    -- d1_shard | d1_dedicated | postgres
+  backend_ref    TEXT NOT NULL,    -- shard name, D1 binding/database ID, or Hyperdrive binding
+  shard_index    INTEGER,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL
+);
+```
+
+For the first sharded implementation, `tenant_routes` may be populated lazily or
+derived by hash for repo namespaces, but the API must leave room for dedicated
+tenant D1/Postgres routes later.
+
+Do not implement one D1 binding per tenant as the first scale step. Use a bounded
+set of catalog shard bindings first, then promote exceptional tenants to
+dedicated backends through `tenant_routes`.
+
+### Storage Router Interface
+
+The exact TypeScript shape may evolve, but the seam should look like:
+
+```typescript
+interface StorageRouter {
+  core(): D1Database;
+  catalogForNamespace(namespaceId: string): Promise<D1Database>;
+  catalogForNamespaces(namespaceIds: string[]): Promise<Map<D1Database, string[]>>;
+  enqueueCatalogIngest?(message: CatalogIngestMessage): Promise<void>;
+}
+
+interface CatalogIngestMessage {
+  namespaceId: string;
+  repoId: string;
+  repoFullName: string;
+  uploadId: string;
+  envelopeRef: string;
+  commitSha: string;
+  receivedAt: string;
+}
+```
+
+Dashboard reads across multiple visible namespaces should group namespace IDs by
+catalog shard and query each touched shard with bounded limits. They must not
+scan all shards.
 
 ---
 
@@ -97,6 +203,12 @@ await this.bucket.put(key, content, {
 ## D1 Index (`D1Index`)
 
 D1 is used for **queryable metadata only**. It is not authoritative for execution state.
+
+`D1Index` operates on one concrete D1 database. In the current implementation,
+that is `env.DB`. In the scalable implementation, callers obtain the appropriate
+core or catalog shard database through the storage router and then construct
+`D1Index` for that database. `D1Index` must not reach into Worker `Env` or choose
+shards itself.
 
 ### Schema Migrations
 
@@ -287,6 +399,11 @@ CREATE INDEX idx_catalog_relations_target ON catalog_component_relations(target_
 
 Catalog D1 rows are derived. Replaying the same `upload_id` must be idempotent.
 
+In the scalable topology, this catalog migration is applied to every catalog
+shard, not to the core control-plane database. During transition, the existing
+single `DB` binding may carry these tables until the storage-router task splits
+logical roles.
+
 #### Catalog R2 Paths
 
 All catalog R2 paths must start with the effective namespace ID:
@@ -371,6 +488,20 @@ ctx.waitUntil(d1Index.createRun(run));
 ```
 
 This means D1 may briefly lag behind the DO state. This is acceptable because D1 is only for dashboard queries, not execution decisions.
+
+For catalog ingestion, the production-scale write strategy is:
+
+1. validate auth and envelope metadata
+2. store the full envelope in R2
+3. record/upload-id idempotency metadata in the routed catalog shard
+4. enqueue a pointer message to `CATALOG_INGEST_QUEUE`
+5. let the consumer normalize component/relation/event rows in bounded batches
+
+Queue messages must stay small and should contain route metadata plus R2 refs.
+They must not contain full catalog envelopes, plans, logs, or component states.
+
+The local/dev fallback may continue to normalize with `ctx.waitUntil` when queue
+bindings are unavailable, but the code path should share the same normalizer.
 
 ---
 
