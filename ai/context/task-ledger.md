@@ -59,4 +59,5 @@ the task is directly related to the current change.
 | Task | Status | Compact Outcome |
 |---|---|---|
 | 0016 | PASS, PR #35 | StorageRouter with FNV hash routing and single-DB fallback; queue-backed ingestion with CATALOG_INGEST_QUEUE; ctx.waitUntil fallback; shard-grouped reads; migrations/0006_tenant_routes.sql. Cross-shard JOIN limitation deferred (proposal at ai/proposals/task-0016-spec-update.md). |
-| 0017 | PENDING | Queue consumer: read CatalogIngestMessage from CATALOG_INGEST_QUEUE, call shared normalizeComponents, handle retries. Message shape and normalizer ready. |
+| 0017 | PASS, PR #36 | Worker queue consumer for CatalogIngestMessage: R2 envelope load, defensive validation, shared normalizeComponents, per-message ack/retry. Verifier fixed path-in-logs constraint violation before merge. namespaceId===repoId and uploadId cross-check deferred as risk notes. No queue/shard binding activated. |
+| 0018 | PASS, PR #37 | Provisioned orun-catalog-ingest + orun-catalog-ingest-dlq via CF API; CATALOG_INGEST_QUEUE producer/consumer bindings in wrangler.jsonc (batch_size=10, max_retries=3, DLQ); namespaceId/repoId and uploadId cross-checks hardened; log safety fix (opaque reason code); E2E test. POST /v1/catalog/sync → 202 confirmed via workers.dev smoke (CI run 25544219282). |
