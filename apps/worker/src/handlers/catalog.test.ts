@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Env } from "@orun/types";
 import type { RequestContext } from "../auth";
 import type { CatalogSyncEnvelope, CatalogIngestMessage } from "@orun/types";
+import { handleCatalogIngestQueue } from "./catalog-queue";
 
 function makeDONamespace(): DurableObjectNamespace {
   const stub = {
@@ -133,6 +134,33 @@ function makeExecutionContext(): ExecutionContext & { _flush: () => Promise<unkn
     passThroughOnException: () => {},
     _flush: () => Promise.all(promises),
   } as unknown as ExecutionContext & { _flush: () => Promise<unknown[]> };
+}
+
+type MockQueueMessage = {
+  id: string;
+  timestamp: Date;
+  body: unknown;
+  ack: ReturnType<typeof vi.fn>;
+  retry: ReturnType<typeof vi.fn>;
+};
+
+function makeMockQueueMessage(body: unknown): MockQueueMessage {
+  return {
+    id: "msg-" + Math.random().toString(36).slice(2),
+    timestamp: new Date(),
+    body,
+    ack: vi.fn(),
+    retry: vi.fn(),
+  };
+}
+
+function makeMockBatch(messages: MockQueueMessage[]) {
+  return {
+    queue: "CATALOG_INGEST_QUEUE",
+    messages,
+    ackAll: vi.fn(),
+    retryAll: vi.fn(),
+  } as unknown as MessageBatch<CatalogIngestMessage>;
 }
 
 vi.mock("../auth", async (importOriginal) => {
@@ -566,5 +594,39 @@ describe("Catalog sync — queue path", () => {
     );
     expect(resp.status).toBe(202);
     expect(enqueuedMessages).toHaveLength(0);
+  });
+
+  it("end-to-end: POST sync enqueues R2-ref message → queue consumer normalizes → catalog state written to R2", async () => {
+    const { env: envWithQueue, enqueuedMessages } = makeEnvWithQueue();
+    const queueCtx = {
+      waitUntil: vi.fn(),
+      passThroughOnException: vi.fn(),
+    } as unknown as ExecutionContext;
+
+    // Step 1: POST catalog/sync — envelope goes to R2, pointer message enqueued
+    const resp = await routeRequest(req("POST", "/v1/catalog/sync", makeValidEnvelope()), envWithQueue, ctx);
+    expect(resp.status).toBe(202);
+    expect(enqueuedMessages).toHaveLength(1);
+
+    const queuedMsg = enqueuedMessages[0];
+
+    // Step 2: Assert the queue message is a pointer (no full envelope/components)
+    expect(typeof queuedMsg.envelopeRef).toBe("string");
+    expect(queuedMsg.envelopeRef).toContain("catalog/uploads");
+    expect((queuedMsg as unknown as Record<string, unknown>)["components"]).toBeUndefined();
+
+    // Step 3: Feed the captured message into the queue consumer using the same env
+    const mockMsg = makeMockQueueMessage(queuedMsg);
+    await handleCatalogIngestQueue(makeMockBatch([mockMsg]), envWithQueue, queueCtx);
+
+    // Step 4: Consumer must ack the message (no retry)
+    expect(mockMsg.ack).toHaveBeenCalledTimes(1);
+    expect(mockMsg.retry).not.toHaveBeenCalled();
+
+    // Step 5: Normalized component state must be written to R2
+    const r2 = envWithQueue.STORAGE as unknown as { _store: Map<string, string> };
+    const stateKey = [...r2._store.keys()].find((k) => k.includes("catalog/commits"));
+    expect(stateKey).toBeDefined();
+    expect(stateKey).toContain("api-worker");
   });
 });

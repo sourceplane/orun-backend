@@ -349,6 +349,28 @@ describe("handleCatalogIngestQueue — invalid/poison messages", () => {
     expect(msg.retry).not.toHaveBeenCalled();
   });
 
+  it("drops message when namespaceId !== repoId — acks without retry", async () => {
+    const env = makeEnv();
+    const msg = makeMockMessage({ ...VALID_MESSAGE, namespaceId: "DIFFERENT_NS_ID" });
+
+    await handleCatalogIngestQueue(makeMockBatch([msg]), env, makeExecutionContext());
+
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
+  it("drops message when envelope.uploadId does not match message.uploadId — acks without retry", async () => {
+    const envelope = makeValidEnvelope({ uploadId: "upl-WRONG" });
+    const r2 = makeR2WithEnvelope(envelope);
+    const env = makeEnv({ r2 });
+    const msg = makeMockMessage(VALID_MESSAGE); // message has uploadId "upl-001"
+
+    await handleCatalogIngestQueue(makeMockBatch([msg]), env, makeExecutionContext());
+
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
   it("drops message when a component has an absolute path — acks without retry", async () => {
     const envelope = makeValidEnvelope();
     envelope.components[0].component.path = "/absolute/path";
