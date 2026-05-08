@@ -60,11 +60,14 @@ local and orun CI checks pass (21/21 jobs). Verifier report:
 `ai/reports/task-0021-verifier.md`. Live database smoke was not run — Docker/local
 Postgres unavailable; deferred to Task 0022 Tactonic provisioning.
 
-Next task is Task 0022: Tactonic/Supabase provisioning component and CI plan
-workflow. It must provision the Supabase project and database, wire
-`DATABASE_URL` into CI secrets, and run `pnpm --filter @orun/db migrate` against
-the live database to confirm `orun_schema_migrations` and all 8 core tables
-exist.
+Task 0022 prompt is `ai/tasks/task-0022.md`. Per the user's request, it brings
+database provisioning forward before V2 API work so DB/schema changes can be
+tested as they are developed. The task asks for a Tactonic/Terraform
+Supabase/Postgres provisioning scaffold, an on-demand plan-first provisioning
+workflow using `SUPABASE_API_KEY`, and a PR-safe real Postgres migration smoke
+that runs `pnpm --filter @orun/db migrate` and verifies
+`orun_schema_migrations` plus all 8 core tables. Shared Supabase apply must not
+run unless account/project/region/secret scope are clear.
 
 The latest architecture update from `scalable-db-conversations.txt` keeps Orun
 Cloudflare-first but rejects the long-term "one giant D1" shape. The durable

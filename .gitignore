@@ -11,3 +11,11 @@ dist/
 # orun per-job staged workspaces
 .orun/runs/
 .secrets
+
+# Terraform — state and plan files must never be committed
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfplan
+**/tfplan.json
+**/.terraform.tfstate.lock.info

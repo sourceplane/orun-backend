@@ -1,0 +1,37 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: orun-supabase-database
+  description: >
+    Supabase/Postgres project and database provisioning for orun V2.
+    Platform resources only — application DDL is owned by packages/db migrations.
+
+# DISCOVERY NOTE: infra/ is not currently in intent.yaml discovery roots.
+# This component is invoked directly by .github/workflows/v2-db-provision.yml.
+# To activate Orun-managed discovery, add infra/ to intent.yaml discovery roots
+# and ensure remote state is configured. See ai/proposals/task-0022-supabase-postgres-component.md.
+
+# COMPOSITION NOTE: stack-tectonic:0.12.0 does not export a supabase-postgres
+# composition type. This component uses the generic terraform composition.
+# A first-class supabase-postgres type is proposed in the spec proposal above.
+
+composition:
+  name: terraform
+  source: stack-tectonic
+
+config:
+  workingDirectory: infra/supabase
+
+  # Environment-specific variable overrides are passed at workflow invocation
+  # time via -var or TF_VAR_* environment variables. Do not hardcode
+  # environment-specific values here.
+  #
+  # Required TF_VAR_* in CI:
+  #   TF_VAR_environment            — dev | preview | staging | prod
+  #   TF_VAR_organization_slug      — sourceplane
+  #   TF_VAR_supabase_organization_id — Supabase org ID (from dashboard)
+  #   TF_VAR_project_name           — e.g. "orun-dev"
+  #   TF_VAR_region                 — e.g. "us-east-1"
+  #   TF_VAR_database_password_secret_ref — secret manager path
+  #   TF_VAR_supabase_api_key       — sourced from SUPABASE_API_KEY secret
