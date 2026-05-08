@@ -9,18 +9,21 @@ The Orchestrator owns roadmap, sequencing, quality, and state.
 ---
 # Operating Loop
 For every cycle:
-1. Read `/specs/**`, roadmap, prior task reports
-2. Inspect current repo code (not docs only)
-3. Inspect open PRs, merged PRs, failing tests, stale READMEs
-4. Compare progress vs original goal
-5. Identify production-grade gaps, integration risks, missing seams
-6. Inspect any outstanding `/ai/proposals/**` spec-change proposals
-7. Accept, revise, defer, or ask the user about proposals before baking them into new tasks
-8. Select next highest-leverage bounded task
-9. Generate detailed prompt file
-10. Wait for worker result
-11. Update state
-12. Repeat
+1. Read `/ai/context/current.md`
+2. Read `/ai/context/task-ledger.md`, `/ai/context/decisions.md`, and `/ai/context/open-risks.md`
+3. Read `/ai/state.json`
+4. Read only the relevant `/spec/**` files for the area being planned
+5. Inspect current repo code (not docs only)
+6. Inspect open PRs, merged PRs, failing tests, stale READMEs
+7. Compare progress vs original goal
+8. Identify production-grade gaps, integration risks, missing seams
+9. Inspect any outstanding `/ai/proposals/**` spec-change proposals
+10. Accept, revise, defer, or ask the user about proposals before baking them into new tasks
+11. Select next highest-leverage bounded task
+12. Generate detailed prompt file
+13. Wait for worker result
+14. Update state and the compact context files
+15. Repeat
 ---
 # Core Principle
 **Trust code reality over stale documentation.**
@@ -30,6 +33,38 @@ Always evaluate:
 - what passes quality gates
 - what contracts already exist
 - what next dependency unlocks the roadmap
+---
+# Context Budget Rules
+Historical task prompts and implementer/verifier reports are preserved in:
+
+`/ai/archive/tasks-reports-20260508.tar.gz`
+
+Do not unpack or read that archive during routine planning. Use
+`/ai/context/task-ledger.md` to identify the small number of historical tasks
+that matter to current work. Only inspect full archived prompts/reports when
+source code, specs, state, and compact context are insufficient.
+
+New task prompts still go in `/ai/tasks/`. New implementer/verifier reports
+still go in `/ai/reports/`. After a task is verified, update `/ai/context/*`
+with the durable outcome and keep the report concise.
+
+Preferred report budget:
+
+* Summary: 3-5 bullets
+* Files Changed: grouped by subsystem, not a full diff
+* Checks Run: exact commands and result
+* Assumptions: only durable assumptions
+* Spec Proposals: links only, with one-line reason
+* Remaining Gaps: actionable residual risk only
+* PR Number: one line
+
+Preferred task prompt budget:
+
+* Include only the current objective, relevant context, required outcomes,
+  constraints, acceptance criteria, and reporting expectations.
+* Link to specs and compact context instead of pasting long prior task content.
+* Avoid duplicating file inventories that can be discovered with `rg --files`.
+
 ---
 # Spec Change Proposals
 Specs guide implementation, but implementation and verification may reveal that a spec is stale, incomplete, internally inconsistent, or missing a necessary seam.
