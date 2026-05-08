@@ -40,66 +40,102 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      # -- Queue provisioning --
+      # -- Queue provisioning via Cloudflare REST API (avoids wrangler v3/v4 compat issues) --
 
-      - name: Create orun-catalog-ingest queue (idempotent)
+      - name: Create orun-catalog-ingest queue (idempotent via REST API)
+        working-directory: .
         run: |
-          if npx wrangler queues info orun-catalog-ingest 2>&1 | grep -q "does not exist"; then
-            echo "Creating orun-catalog-ingest..."
-            npx wrangler queues create orun-catalog-ingest
+          # Check if queue exists
+          LIST_RESP=$(curl -sS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues")
+
+          if echo "${LIST_RESP}" | jq -e '.result[] | select(.queue_name == "orun-catalog-ingest")' > /dev/null 2>&1; then
+            echo "orun-catalog-ingest already exists — skipping create"
           else
-            echo "orun-catalog-ingest already exists."
+            echo "Creating orun-catalog-ingest via Cloudflare API..."
+            CREATE_RESP=$(curl -sS -X POST \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"queue_name":"orun-catalog-ingest"}' \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues")
+            echo "Create response: $(echo "${CREATE_RESP}" | jq '{success, errors}')"
+            if ! echo "${CREATE_RESP}" | jq -e '.success == true' > /dev/null; then
+              echo "ERROR: Failed to create orun-catalog-ingest"
+              echo "${CREATE_RESP}" | jq .
+              exit 1
+            fi
+            echo "orun-catalog-ingest created successfully"
           fi
 
-      - name: Create orun-catalog-ingest-dlq queue (idempotent)
+      - name: Create orun-catalog-ingest-dlq queue (idempotent via REST API)
+        working-directory: .
         run: |
-          if npx wrangler queues info orun-catalog-ingest-dlq 2>&1 | grep -q "does not exist"; then
-            echo "Creating orun-catalog-ingest-dlq..."
-            npx wrangler queues create orun-catalog-ingest-dlq
+          LIST_RESP=$(curl -sS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues")
+
+          if echo "${LIST_RESP}" | jq -e '.result[] | select(.queue_name == "orun-catalog-ingest-dlq")' > /dev/null 2>&1; then
+            echo "orun-catalog-ingest-dlq already exists — skipping create"
           else
-            echo "orun-catalog-ingest-dlq already exists."
+            echo "Creating orun-catalog-ingest-dlq via Cloudflare API..."
+            CREATE_RESP=$(curl -sS -X POST \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"queue_name":"orun-catalog-ingest-dlq"}' \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues")
+            echo "Create response: $(echo "${CREATE_RESP}" | jq '{success, errors}')"
+            if ! echo "${CREATE_RESP}" | jq -e '.success == true' > /dev/null; then
+              echo "ERROR: Failed to create orun-catalog-ingest-dlq"
+              echo "${CREATE_RESP}" | jq .
+              exit 1
+            fi
+            echo "orun-catalog-ingest-dlq created successfully"
           fi
 
-      - name: Verify queue info
+      - name: Verify queue list via Cloudflare API
+        working-directory: .
         run: |
-          echo "=== orun-catalog-ingest ==="
-          npx wrangler queues info orun-catalog-ingest
-          echo "=== orun-catalog-ingest-dlq ==="
-          npx wrangler queues info orun-catalog-ingest-dlq
+          echo "=== Cloudflare Queues list ==="
+          curl -sS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues" \
+          | jq '.result[] | {queue_name, consumers_total_count, producers_total_count}'
 
       # -- Deploy Worker --
 
       - name: Deploy Worker with queue bindings
         run: npx wrangler deploy --config wrangler.jsonc
 
-      # -- Verify consumer attachment --
+      # -- Verify consumer attachment via Cloudflare API --
 
       - name: Verify consumer attachment via Cloudflare Queues API
+        working-directory: .
         run: |
           QUEUES_RESP=$(curl -sS \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues")
 
-          echo "=== Cloudflare Queues API response ==="
+          echo "=== Queue summary ==="
           echo "${QUEUES_RESP}" | jq '.result[] | {queue_name, consumers_total_count, producers_total_count}'
 
           if ! echo "${QUEUES_RESP}" | jq -e '.result[] | select(.queue_name == "orun-catalog-ingest")' > /dev/null; then
-            echo "ERROR: orun-catalog-ingest not found in Cloudflare Queues API response"
+            echo "ERROR: orun-catalog-ingest not found"
             exit 1
           fi
-          echo "orun-catalog-ingest confirmed in Cloudflare account"
+          echo "orun-catalog-ingest confirmed"
 
           if ! echo "${QUEUES_RESP}" | jq -e '.result[] | select(.queue_name == "orun-catalog-ingest-dlq")' > /dev/null; then
-            echo "ERROR: orun-catalog-ingest-dlq not found in Cloudflare Queues API response"
+            echo "ERROR: orun-catalog-ingest-dlq not found"
             exit 1
           fi
-          echo "orun-catalog-ingest-dlq confirmed in Cloudflare account"
+          echo "orun-catalog-ingest-dlq confirmed"
 
       - name: List consumer attachment for orun-catalog-ingest
         run: |
           echo "=== Consumer list for orun-catalog-ingest ==="
-          npx wrangler queues consumer worker list orun-catalog-ingest --json || \
-          npx wrangler queues consumer list orun-catalog-ingest --json || \
+          npx wrangler queues consumer worker list orun-catalog-ingest --json 2>&1 || \
+          npx wrangler queues consumer list orun-catalog-ingest --json 2>&1 || \
           echo "Consumer list command not supported in this wrangler version"
 
       # -- Live endpoint smoke (OIDC) --
