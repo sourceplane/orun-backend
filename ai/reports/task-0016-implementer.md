@@ -73,4 +73,4 @@ pnpm exec turbo run build
 
 ## PR Number
 
-(to be filled after PR is opened)
+PR #35 — https://github.com/sourceplane/orun-backend/pull/35
