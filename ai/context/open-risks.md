@@ -48,6 +48,15 @@
   blocked by Cloudflare WAF managed challenge for GHA runner IPs. The workers.dev
   fallback succeeds and should remain the CI-safe smoke target until a WAF policy
   change is explicitly planned.
+- **V2 Supabase DB and Hyperdrive not live-verified:** Task 0022 merged PR #40
+  and the Postgres migration smoke is green using a disposable container. However,
+  the manually created shared Supabase database has not been live-smoked
+  (`pnpm --filter @orun/db migrate && pnpm --filter @orun/db smoke` against the
+  real `DATABASE_URL`) and the Hyperdrive config (`oruncloud-db`,
+  `d8cada8abda7451aaa1e2ce189dc8a17`) has not been inspected via `wrangler`
+  because credentials were unavailable. Terraform apply is also blocked until a
+  future adoption task imports those resources into state. These are expected gaps
+  documented in the Task 0022 verifier report.
 
 ## Auth And Session Follow-Ups
 

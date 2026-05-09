@@ -17,13 +17,13 @@ Build a Cloudflare-first Orun control plane monorepo:
 
 ## Current State
 
-- Current task pointer: task 0022
-- Last verified: 2026-05-08
+- Current task pointer: task 0023
+- Last verified: 2026-05-09
 - Repo health: yellow
 - Live Worker: `https://orun-api.sourceplane.ai`
 - Live Dashboard: `https://orun-dashboard.sourceplane.ai`
 - Stack version: `oci://ghcr.io/sourceplane/stack-tectonic:0.12.0`
-- Next focus: Task 0022 — Tactonic/Supabase provisioning component and CI plan workflow.
+- Next focus: Task 0023 — V2 API routes.
 
 Repo health is yellow because Task 0019 could not complete a fresh live local
 remote-state conformance run: the available CLI session predates
@@ -60,14 +60,21 @@ local and orun CI checks pass (21/21 jobs). Verifier report:
 `ai/reports/task-0021-verifier.md`. Live database smoke was not run — Docker/local
 Postgres unavailable; deferred to Task 0022 Tactonic provisioning.
 
-Task 0022 prompt is `ai/tasks/task-0022.md`. Per the user's request, it brings
-database provisioning forward before V2 API work so DB/schema changes can be
-tested as they are developed. The task asks for a Tactonic/Terraform
-Supabase/Postgres provisioning scaffold, an on-demand plan-first provisioning
-workflow using `SUPABASE_API_KEY`, and a PR-safe real Postgres migration smoke
-that runs `pnpm --filter @orun/db migrate` and verifies
-`orun_schema_migrations` plus all 8 core tables. Shared Supabase apply must not
-run unless account/project/region/secret scope are clear.
+Task 0022 verified PASS on 2026-05-09. PR #40 merged as squash commit `e784ba1`.
+Adds `infra/supabase/` Terraform adoption scaffold (plan-only, apply job removed),
+`.github/workflows/v2-db-smoke.yml` (disposable Postgres migration smoke),
+`packages/db/src/smoke.ts` (verifies `orun_schema_migrations`, 8 core tables,
+`idx_projects_org`, `lifecycle_status` check constraint), and plan-first
+provisioning workflow. Verifier fixed two issues before merge: (1) `smoke.ts`
+used `information_schema.constraint_table_usage` (covers only FK/PK/unique, not
+check constraints) — fixed to `table_constraints`; (2) `v2-db-provision.yml`
+had an `apply` job that could create a new Supabase project — removed. All CI
+checks pass. `kiox -- orun run --changed` 21/21 PASS. Live Supabase DB smoke and
+Hyperdrive inspection blocked by missing credentials (expected, documented). V1
+behavior unchanged. Verifier report: `ai/reports/task-0022-verifier.md`.
+
+Task 0023 is next: V2 API routes. The Postgres smoke CI will now validate every
+DB schema change automatically on each PR touching `packages/db/**`.
 
 The latest architecture update from `scalable-db-conversations.txt` keeps Orun
 Cloudflare-first but rejects the long-term "one giant D1" shape. The durable

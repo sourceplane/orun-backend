@@ -1,10 +1,10 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 22,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16, 17, 18, 19, 20, 21],
+  "current_task": 23,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16, 17, 18, 19, 20, 21, 22],
   "repo_health": "yellow",
-  "next_focus": "task-0022-tactonic-supabase-provisioning",
-  "last_verified": "2026-05-08",
+  "next_focus": "task-0023-v2-api-routes",
+  "last_verified": "2026-05-09",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
   "stack_version": "oci://ghcr.io/sourceplane/stack-tectonic:0.12.0",
@@ -70,6 +70,8 @@
     "Task 0021 implementation report received on 2026-05-08: PR #39 (head 2bb9bd1) creates packages/db as @orun/db with migration harness, Node pg client, CLI scripts, typed domain boundaries, and 0001_core.sql. PR CI is green for Orun Plan and orun-db dev/staging/production package checks.",
     "Task 0021 verifier prompt produced on 2026-05-08: verify PR #39 and explicitly confirm the DB package/foundation exists, the core schema migration matches V2 specs, harness behavior is tested, and a disposable Postgres/Supabase migration smoke is run when safely available.",
     "Task 0021 verified PASS on 2026-05-08: packages/db/@orun/db merged as PR #39 squash commit 238404e. Harness (applyMigrations/getMigrationStatus/loadMigrations/checksumSql), NodePgClient, CLI scripts, typed domain row types for 8 tables, ids.ts, 0001_core.sql. 57 tests pass. pnpm typecheck/test/build all pass. kiox orun run --changed 21/21 jobs pass. CI run 25564795515 green (Orun Plan + orun-db dev/staging/production). Live DB smoke not run (Docker unavailable; deferred to Task 0022). Verifier report: ai/reports/task-0021-verifier.md. Next: Task 0022 Tactonic/Supabase provisioning.",
-    "Task 0022 implementer prompt produced on 2026-05-08 per user request to bring database provisioning early: add Tactonic/Terraform Supabase/Postgres scaffold, plan-first provisioning workflow using SUPABASE_API_KEY, and a PR-safe real Postgres migration smoke for @orun/db so schema changes can be tested as they are developed. Do not wire Worker/Hyperdrive or change V1 behavior."
+    "Task 0022 implementer prompt produced on 2026-05-08 per user request to bring database provisioning early: add Tactonic/Terraform Supabase/Postgres scaffold, plan-first provisioning workflow using SUPABASE_API_KEY, and a PR-safe real Postgres migration smoke for @orun/db so schema changes can be tested as they are developed. Do not wire Worker/Hyperdrive or change V1 behavior.",
+    "Task 0022 revised on 2026-05-09: user manually created the shared Supabase DB and Cloudflare Hyperdrive config. Spec/task revised to skip DB/Hyperdrive creation and require adoption/verification only. Known non-secret Hyperdrive details: name oruncloud-db, Worker binding HYPERDRIVE, id d8cada8abda7451aaa1e2ce189dc8a17.",
+    "Task 0022 verified PASS on 2026-05-09: PR #40 merged as squash commit e784ba1. infra/supabase/ Terraform adoption scaffold (plan-only, apply job removed by verifier), .github/workflows/v2-db-smoke.yml (disposable Postgres migration smoke), packages/db/src/smoke.ts (verifies orun_schema_migrations, 8 core tables, idx_projects_org, lifecycle_status check constraint), plan-first provisioning workflow. Verifier fixes: (1) smoke.ts constraint_table_usage -> table_constraints; (2) apply job removed from v2-db-provision.yml. CI 5/5 green. kiox orun run --changed 21/21 PASS. Live Supabase DB smoke and Hyperdrive inspection blocked by missing credentials (expected, documented). V1 behavior unchanged. Verifier report: ai/reports/task-0022-verifier.md. Next: Task 0023 V2 API routes."
   ]
 }
