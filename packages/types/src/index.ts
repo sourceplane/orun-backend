@@ -1,4 +1,4 @@
-import type { DurableObjectNamespace, R2Bucket, D1Database } from "@cloudflare/workers-types";
+import type { DurableObjectNamespace, R2Bucket, D1Database, Hyperdrive } from "@cloudflare/workers-types";
 
 // ─── Core Domain Types ───────────────────────────────────────────────────────
 
@@ -380,4 +380,59 @@ export interface Env {
   // Optional bounded catalog shard D1 bindings — when absent, DB is the fallback
   DB_CATALOG_0?: D1Database;
   DB_CATALOG_1?: D1Database;
+  // V2 Postgres via Cloudflare Hyperdrive
+  HYPERDRIVE?: Hyperdrive;
+  // Supabase JWT verification (configurable so no project URL is hardcoded)
+  SUPABASE_JWKS_URL?: string;
+  SUPABASE_JWT_ISSUER?: string;
+  SUPABASE_JWT_AUDIENCE?: string;
+}
+
+// ─── V2 Response Types ────────────────────────────────────────────────────────
+
+export type V2MemberRole = "owner" | "admin" | "member" | "viewer";
+
+export interface V2UserProfile {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  githubLogin: string | null;
+}
+
+export interface V2OrgMembership {
+  id: string;
+  slug: string;
+  name: string;
+  role: V2MemberRole;
+  permissions: string[];
+}
+
+export interface V2MeResponse {
+  user: V2UserProfile;
+  organizations: V2OrgMembership[];
+}
+
+export interface V2OrgSummary {
+  id: string;
+  slug: string;
+  name: string;
+  lifecycleStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface V2OrgDetail extends V2OrgSummary {
+  billingPlan: string;
+  billingStatus: string;
+}
+
+export interface V2ProjectSummary {
+  id: string;
+  organizationId: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  lifecycleStatus: string;
+  createdAt: string;
+  updatedAt: string;
 }

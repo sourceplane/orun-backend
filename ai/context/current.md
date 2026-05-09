@@ -73,8 +73,13 @@ checks pass. `kiox -- orun run --changed` 21/21 PASS. Live Supabase DB smoke and
 Hyperdrive inspection blocked by missing credentials (expected, documented). V1
 behavior unchanged. Verifier report: `ai/reports/task-0022-verifier.md`.
 
-Task 0023 is next: V2 API routes. The Postgres smoke CI will now validate every
-DB schema change automatically on each PR touching `packages/db/**`.
+Task 0023 prompt is `ai/tasks/task-0023.md`: V2 API routes for the
+organization/project onboarding foundation. It asks the implementer to add a
+Worker-safe `@orun/db` boundary, V2 auth context, Postgres-backed
+organizations/projects stores, `/v2/me`, organization and project routes, and
+role/permission helpers while preserving all V1 behavior. The Postgres smoke CI
+will validate every DB schema change automatically on each PR touching
+`packages/db/**`.
 
 The latest architecture update from `scalable-db-conversations.txt` keeps Orun
 Cloudflare-first but rejects the long-term "one giant D1" shape. The durable

@@ -16,8 +16,10 @@
   },
   "dependencies": {
     "@orun/coordinator": "workspace:*",
+    "@orun/db": "workspace:*",
     "@orun/storage": "workspace:*",
-    "@orun/types": "workspace:*"
+    "@orun/types": "workspace:*",
+    "postgres": "^3.4.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240605.0",

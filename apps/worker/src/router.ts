@@ -9,6 +9,11 @@ import { handleUploadLog, handleGetLog } from "./handlers/logs";
 import { handleCreateAccount, handleGetAccount, handleLinkRepo, handleListLinkedRepos, handleUnlinkRepo, handleLinkRepoFromSession } from "./handlers/accounts";
 import { handleCatalogSync, handleListCatalogComponents, handleGetCatalogComponent, handleGetCatalogComponentHistory, handleGetCatalogComponentRuns, handleGetCatalogComponentDependencies, handleListRepoComponents } from "./handlers/catalog";
 import { checkRateLimit } from "./rate-limit";
+import { makeWorkerDbClient } from "./db";
+import { authenticateV2, type RequestContextV2 } from "./auth/v2";
+import { handleV2Me } from "./handlers/v2/me";
+import { handleCreateOrg, handleListOrgs, handleGetOrg } from "./handlers/v2/organizations";
+import { handleCreateProject, handleListProjects, handleGetProject } from "./handlers/v2/projects";
 
 interface RouteContext {
   request: Request;
@@ -71,6 +76,75 @@ const routes: Route[] = [
   route("GET", "/v1/repos/:repoId/components", handleListRepoComponents, "session", true),
 ];
 
+// ─── V2 Routes ────────────────────────────────────────────────────────────────
+
+type V2Db = ReturnType<typeof makeWorkerDbClient>;
+type V2Handler = (
+  request: Request,
+  authCtx: RequestContextV2,
+  db: V2Db,
+  params: Record<string, string>,
+) => Promise<Response>;
+
+interface V2Route {
+  method: string;
+  pattern: RegExp;
+  paramNames: string[];
+  handler: V2Handler;
+}
+
+function v2route(method: string, path: string, handler: V2Handler): V2Route {
+  const paramNames: string[] = [];
+  const regexStr = path.replace(/:([a-zA-Z]+)/g, (_, name) => {
+    paramNames.push(name);
+    return "([^/]+)";
+  });
+  return { method, pattern: new RegExp(`^${regexStr}$`), paramNames, handler };
+}
+
+const v2routes: V2Route[] = [
+  v2route("GET",  "/v2/me",                                       (req, ctx, db) => handleV2Me(req, ctx, db)),
+  v2route("POST", "/v2/organizations",                            (req, ctx, db) => handleCreateOrg(req, ctx, db)),
+  v2route("GET",  "/v2/organizations",                            (req, ctx, db) => handleListOrgs(req, ctx, db)),
+  v2route("GET",  "/v2/organizations/:orgId",                     (req, ctx, db, p) => handleGetOrg(req, ctx, db, p.orgId)),
+  v2route("POST", "/v2/organizations/:orgId/projects",            (req, ctx, db, p) => handleCreateProject(req, ctx, db, p.orgId)),
+  v2route("GET",  "/v2/organizations/:orgId/projects",            (req, ctx, db, p) => handleListProjects(req, ctx, db, p.orgId)),
+  v2route("GET",  "/v2/organizations/:orgId/projects/:projectId", (req, ctx, db, p) => handleGetProject(req, ctx, db, p.orgId, p.projectId)),
+];
+
+function isV2Path(path: string): boolean {
+  return v2routes.some((r) => r.pattern.test(path));
+}
+
+async function routeV2(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  path: string,
+  method: string,
+): Promise<Response | null> {
+  for (const r of v2routes) {
+    if (r.method !== method) continue;
+    const match = r.pattern.exec(path);
+    if (!match) continue;
+
+    const params: Record<string, string> = {};
+    for (let i = 0; i < r.paramNames.length; i++) {
+      params[r.paramNames[i]] = decodeURIComponent(match[i + 1]);
+    }
+
+    if (!env.HYPERDRIVE) {
+      return errorJson("INTERNAL_ERROR", "V2 database not configured", 503);
+    }
+
+    const db = makeWorkerDbClient(env.HYPERDRIVE.connectionString);
+    const authCtx = await authenticateV2(request, env, db);
+
+    return r.handler(request, authCtx, db, params);
+  }
+  return null;
+}
+
 export async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     return await routeRequestInner(request, env, ctx);
@@ -92,6 +166,16 @@ async function routeRequestInner(request: Request, env: Env, ctx: ExecutionConte
     return json({ status: "ok", service: "orun-api" });
   }
 
+  // V2 routes — auth + Postgres via Hyperdrive
+  if (path.startsWith("/v2/")) {
+    const v2resp = await routeV2(request, env, ctx, path, method);
+    if (v2resp) return v2resp;
+    return isV2Path(path)
+      ? errorJson("INVALID_REQUEST", "Method not allowed", 405)
+      : errorJson("NOT_FOUND", "Not found", 404);
+  }
+
+  // V1 routes
   for (const r of routes) {
     if (r.method !== method) continue;
     const match = r.pattern.exec(path);

@@ -2,6 +2,7 @@
   "name": "orun-api",
   "main": "src/index.ts",
   "compatibility_date": "2024-01-01",
+  "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
     "bindings": [
       {
@@ -55,6 +56,13 @@
     "GITHUB_JWKS_URL": "https://token.actions.githubusercontent.com/.well-known/jwks",
     "GITHUB_OIDC_AUDIENCE": "orun"
   },
+  // V2 Postgres access via Cloudflare Hyperdrive (manually created; do not recreate)
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "d8cada8abda7451aaa1e2ce189dc8a17"
+    }
+  ],
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
