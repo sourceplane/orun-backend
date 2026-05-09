@@ -1,0 +1,73 @@
+name: V2 DB Smoke
+
+on:
+  pull_request:
+    paths:
+      - "packages/db/**"
+      - "infra/supabase/**"
+      - ".github/workflows/v2-db-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-smoke:
+    name: Postgres Migration Smoke
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: orun
+          POSTGRES_PASSWORD: orun_smoke
+          POSTGRES_DB: orun_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # DATABASE_URL is set here but never printed in log steps.
+      DATABASE_URL: "postgresql://orun:orun_smoke@localhost:5432/orun_smoke"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @orun/db
+        run: pnpm --filter @orun/db build
+
+      - name: Typecheck @orun/db
+        run: pnpm --filter @orun/db typecheck
+
+      - name: Run @orun/db unit tests
+        run: pnpm --filter @orun/db test
+
+      - name: Run migrations against disposable Postgres
+        run: pnpm --filter @orun/db migrate
+        # DATABASE_URL is available as env but is not echoed in this step.
+
+      - name: Verify migration status
+        run: pnpm --filter @orun/db migrate:status
+
+      - name: Run DB smoke checks
+        run: pnpm --filter @orun/db smoke
+        # Verifies: orun_schema_migrations, 0001_core.sql, all 8 tables,
+        # idx_projects_org, and organizations.lifecycle_status check constraint.
+        # DATABASE_URL is consumed by the script but never printed.

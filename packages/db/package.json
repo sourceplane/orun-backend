@@ -21,7 +21,8 @@
     "lint": "echo 'lint deferred'",
     "migrate": "tsx src/cli.ts migrate",
     "migrate:status": "tsx src/cli.ts status",
-    "migrate:check": "tsx src/cli.ts check"
+    "migrate:check": "tsx src/cli.ts check",
+    "smoke": "tsx src/smoke.ts"
   },
   "dependencies": {
     "pg": "^8.13.3"

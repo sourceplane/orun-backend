@@ -1,0 +1,115 @@
+name: V2 DB Provision
+
+# Plan-only workflow for Task 0022. Apply is blocked until a future adoption
+# task explicitly imports the manually created Supabase database and Hyperdrive
+# config into Terraform state and updates this workflow and the task prompt.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - preview
+          - staging
+          - prod
+        default: dev
+      ref:
+        description: "Branch or commit ref to provision from (defaults to current branch)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Prevent concurrent provisioning runs for the same environment.
+concurrency:
+  group: v2-db-provision-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  check-secret:
+    name: Verify SUPABASE_API_KEY is present
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if SUPABASE_API_KEY is missing
+        run: |
+          if [ -z "$SUPABASE_API_KEY" ]; then
+            echo "ERROR: SUPABASE_API_KEY secret is not set."
+            echo "Add SUPABASE_API_KEY to the repository or environment secrets before provisioning."
+            exit 1
+          fi
+          echo "SUPABASE_API_KEY is present (value not shown)."
+        env:
+          SUPABASE_API_KEY: ${{ secrets.SUPABASE_API_KEY }}
+
+  plan:
+    name: Terraform Plan (${{ inputs.environment }})
+    needs: check-secret
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: infra/supabase
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.5"
+
+      - name: Terraform Init
+        run: terraform init
+        env:
+          # No secrets used during init unless a backend requires credentials.
+          TF_IN_AUTOMATION: "true"
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set -euo pipefail
+          terraform plan \
+            -detailed-exitcode \
+            -out=tfplan \
+            -var="environment=${{ inputs.environment }}" \
+            2>&1 | grep -v "access_token\|database_password" || true
+          EXIT_CODE=${PIPESTATUS[0]}
+          # terraform plan exit codes: 0=no changes, 1=error, 2=has changes
+          if [ $EXIT_CODE -eq 1 ]; then
+            echo "Terraform plan failed." >&2
+            exit 1
+          fi
+        env:
+          TF_IN_AUTOMATION: "true"
+          # SUPABASE_API_KEY is the canonical secret name.
+          # It is passed as TF_VAR_supabase_api_key so the Terraform variable
+          # receives it without exposing the value in command arguments.
+          TF_VAR_supabase_api_key: ${{ secrets.SUPABASE_API_KEY }}
+          # Additional environment-specific variables must be set as GitHub
+          # environment secrets or vars and referenced here:
+          # TF_VAR_organization_slug: ${{ vars.TF_ORGANIZATION_SLUG }}
+          # TF_VAR_supabase_organization_id: ${{ secrets.SUPABASE_ORGANIZATION_ID }}
+          # TF_VAR_project_name: ${{ vars.TF_PROJECT_NAME }}
+          # TF_VAR_region: ${{ vars.TF_REGION }}
+          # TF_VAR_database_password_secret_ref: ${{ vars.TF_DB_PASSWORD_SECRET_REF }}
+
+      - name: Upload sanitized plan summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Artifact contains only the plan binary; sensitive outputs are
+          # redacted by Terraform's sensitive = true markings.
+          name: tfplan-${{ inputs.environment }}-${{ github.run_id }}
+          path: infra/supabase/tfplan
+          retention-days: 7
+
+  # Apply is intentionally absent for Task 0022.
+  # The Supabase database and Cloudflare Hyperdrive config were created manually.
+  # Terraform apply is blocked until a future task explicitly imports those
+  # resources into Terraform state, confirms ownership, and updates this workflow.

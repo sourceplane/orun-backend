@@ -1,9 +1,9 @@
 {
   "goal": "Cloudflare-first control plane monorepo",
-  "current_task": 21,
-  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16, 17, 18, 19, 20],
+  "current_task": 22,
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, "8.1", "8.2", "8.3", "8.4", "8.5", 9, 10, 11, "12.2.1", "12.3.1", 13, "13.1", 14, 15, 16, 17, 18, 19, 20, 21],
   "repo_health": "yellow",
-  "next_focus": "task-0021-v2-packages-db-migration-harness",
+  "next_focus": "task-0022-tactonic-supabase-provisioning",
   "last_verified": "2026-05-08",
   "live_worker_url": "https://orun-api.sourceplane.ai",
   "live_dashboard_url": "https://orun-dashboard.sourceplane.ai",
@@ -66,6 +66,10 @@
     "Task 0020 implementation report received on 2026-05-08: sourceplane/orun PR #87 (head 07a3c21) is open and green. It embeds migration 0006, adds queue/consumer/cron support to Cloudflare bootstrap, avoids Task 0015 Worker binding clobber by uploading plain-text vars with bindings, and updates docs/tests. Live Cloudflare smoke was not run by the implementer.",
     "Task 0020 verifier prompt produced on 2026-05-08: verify sourceplane/orun PR #87 against Task 0020, inspect local checks, PR CI logs, Cloudflare API shapes, and disposable live Cloudflare smoke if credentials are available. After PASS and merge, advance to V2 Task 0021: packages/db Postgres migration harness.",
     "Task 0020 verified PASS on 2026-05-08: CLI bootstrap queue provisioning merged as PR #87 squash commit d8dd132. Embedded migration 0006, queue/DLQ/consumer/cron in init/status/destroy, binding-clobber risk resolved. All go test/race/vet pass. CI Orun Plan and Harness dry-run guard both SUCCESS. Live Cloudflare smoke not run (credentials unavailable). Verifier report at ai/reports/task-0020-verifier.md. Next: Task 0021 packages/db V2 Postgres migration harness.",
-    "Task 0021 implementer prompt produced on 2026-05-08: create packages/db as @orun/db, add a tested Supabase/Postgres migration harness, and check in bounded core V2 schema migration for users, organizations, membership, invites, billing placeholders, entitlements, and projects. No Supabase provisioning, Hyperdrive, /v2 routes, or V1 behavior changes."
+    "Task 0021 implementer prompt produced on 2026-05-08: create packages/db as @orun/db, add a tested Supabase/Postgres migration harness, and check in bounded core V2 schema migration for users, organizations, membership, invites, billing placeholders, entitlements, and projects. No Supabase provisioning, Hyperdrive, /v2 routes, or V1 behavior changes.",
+    "Task 0021 implementation report received on 2026-05-08: PR #39 (head 2bb9bd1) creates packages/db as @orun/db with migration harness, Node pg client, CLI scripts, typed domain boundaries, and 0001_core.sql. PR CI is green for Orun Plan and orun-db dev/staging/production package checks.",
+    "Task 0021 verifier prompt produced on 2026-05-08: verify PR #39 and explicitly confirm the DB package/foundation exists, the core schema migration matches V2 specs, harness behavior is tested, and a disposable Postgres/Supabase migration smoke is run when safely available.",
+    "Task 0021 verified PASS on 2026-05-08: packages/db/@orun/db merged as PR #39 squash commit 238404e. Harness (applyMigrations/getMigrationStatus/loadMigrations/checksumSql), NodePgClient, CLI scripts, typed domain row types for 8 tables, ids.ts, 0001_core.sql. 57 tests pass. pnpm typecheck/test/build all pass. kiox orun run --changed 21/21 jobs pass. CI run 25564795515 green (Orun Plan + orun-db dev/staging/production). Live DB smoke not run (Docker unavailable; deferred to Task 0022). Verifier report: ai/reports/task-0021-verifier.md. Next: Task 0022 Tactonic/Supabase provisioning.",
+    "Task 0022 implementer prompt produced on 2026-05-08 per user request to bring database provisioning early: add Tactonic/Terraform Supabase/Postgres scaffold, plan-first provisioning workflow using SUPABASE_API_KEY, and a PR-safe real Postgres migration smoke for @orun/db so schema changes can be tested as they are developed. Do not wire Worker/Hyperdrive or change V1 behavior."
   ]
 }

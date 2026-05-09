@@ -1,0 +1,12 @@
+# Terraform local state and lock files — never commit to shared repos
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+tfplan.json
+.terraform.tfstate.lock.info
+
+# Local variable overrides
+*.auto.tfvars
+terraform.tfvars
+*.tfvars.json
