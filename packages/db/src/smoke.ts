@@ -73,15 +73,17 @@ async function runSmoke(): Promise<void> {
       console.log("PASS: index 'idx_projects_org' exists");
     }
 
-    // Check 4: lifecycle_status check constraint exists on organizations
+    // Check 4: lifecycle_status check constraint exists on organizations.
+    // Must use information_schema.table_constraints (not constraint_table_usage,
+    // which only covers FK/PK/unique and never returns check constraints).
     const { rows: chkRows } = await client.query<{ count: string }>(
       `SELECT COUNT(*) AS count
-       FROM information_schema.check_constraints cc
-       JOIN information_schema.constraint_table_usage ctu
-         ON cc.constraint_name = ctu.constraint_name
-         AND cc.constraint_schema = ctu.constraint_schema
-       WHERE ctu.table_schema = 'public'
-         AND ctu.table_name = 'organizations'
+       FROM information_schema.table_constraints tc
+       JOIN information_schema.check_constraints cc
+         ON tc.constraint_name = cc.constraint_name
+         AND tc.constraint_schema = cc.constraint_schema
+       WHERE tc.table_schema = 'public'
+         AND tc.table_name = 'organizations'
          AND cc.check_clause LIKE '%lifecycle_status%'`
     );
     if (parseInt(chkRows[0]?.count ?? "0", 10) === 0) {

@@ -1,5 +1,9 @@
 name: V2 DB Provision
 
+# Plan-only workflow for Task 0022. Apply is blocked until a future adoption
+# task explicitly imports the manually created Supabase database and Hyperdrive
+# config into Terraform state and updates this workflow and the task prompt.
+
 on:
   workflow_dispatch:
     inputs:
@@ -13,14 +17,6 @@ on:
           - staging
           - prod
         default: dev
-      mode:
-        description: "Terraform mode — plan shows changes, apply creates/updates resources"
-        required: true
-        type: choice
-        options:
-          - plan
-          - apply
-        default: plan
       ref:
         description: "Branch or commit ref to provision from (defaults to current branch)"
         required: false
@@ -58,8 +54,6 @@ jobs:
     defaults:
       run:
         working-directory: infra/supabase
-    outputs:
-      has-changes: ${{ steps.plan.outputs.has-changes }}
 
     steps:
       - uses: actions/checkout@v4
@@ -84,17 +78,12 @@ jobs:
             -detailed-exitcode \
             -out=tfplan \
             -var="environment=${{ inputs.environment }}" \
-            -var="supabase_api_key=$TF_VAR_SUPABASE_API_KEY" \
-            2>&1 | grep -v "TF_VAR_SUPABASE_API_KEY\|access_token\|database_password" || true
+            2>&1 | grep -v "access_token\|database_password" || true
           EXIT_CODE=${PIPESTATUS[0]}
           # terraform plan exit codes: 0=no changes, 1=error, 2=has changes
           if [ $EXIT_CODE -eq 1 ]; then
             echo "Terraform plan failed." >&2
             exit 1
-          elif [ $EXIT_CODE -eq 2 ]; then
-            echo "has-changes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           TF_IN_AUTOMATION: "true"
@@ -120,54 +109,7 @@ jobs:
           path: infra/supabase/tfplan
           retention-days: 7
 
-  apply:
-    name: Terraform Apply (${{ inputs.environment }})
-    needs: plan
-    # Apply only when explicitly requested AND the plan found changes.
-    if: inputs.mode == 'apply' && needs.plan.outputs.has-changes == 'true'
-    runs-on: ubuntu-latest
-    # GitHub environment protection gates prod/staging applies.
-    # Configure required reviewers on the staging and prod environments in
-    # the repository Settings > Environments before enabling.
-    environment: ${{ inputs.environment }}
-    defaults:
-      run:
-        working-directory: infra/supabase
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~1.5"
-
-      - name: Download plan artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ inputs.environment }}-${{ github.run_id }}
-          path: infra/supabase
-
-      - name: Terraform Init
-        run: terraform init
-        env:
-          TF_IN_AUTOMATION: "true"
-
-      - name: Terraform Apply
-        run: |
-          terraform apply \
-            -auto-approve \
-            tfplan \
-            2>&1 | grep -v "access_token\|database_password\|sensitive" || true
-        env:
-          TF_IN_AUTOMATION: "true"
-          TF_VAR_supabase_api_key: ${{ secrets.SUPABASE_API_KEY }}
-
-      # NOTE: After apply, outputs must be stored in approved secrets manager
-      # or GitHub environment secrets via a post-apply step. Do not print
-      # sensitive outputs (postgres_password_secret_ref, database_url_secret_ref,
-      # hyperdrive_database_url_secret_ref) to logs or artifacts.
-      #
-      # A post-apply migration job (run pnpm --filter @orun/db migrate) should
-      # follow once the database URL is securely available to the runner.
+  # Apply is intentionally absent for Task 0022.
+  # The Supabase database and Cloudflare Hyperdrive config were created manually.
+  # Terraform apply is blocked until a future task explicitly imports those
+  # resources into Terraform state, confirms ownership, and updates this workflow.
