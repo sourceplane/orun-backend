@@ -108,6 +108,6 @@ pnpm --filter @orun/worker build        PASS  (240 KiB upload, dry-run)
 - Live end-to-end testing against a real Supabase instance was not run.
   The V2 worker unit tests cover all handler paths with fake DbClient mocks.
 
-## PR Number
+## PR / Commit
 
-<!-- populated after PR is opened -->
+Committed directly to `main` as `b4b9a43` — no separate PR branch was created.
